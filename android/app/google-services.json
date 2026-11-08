@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "19311626943",
+    "project_id": "emville-pms-v2",
+    "storage_bucket": "emville-pms-v2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:19311626943:android:7a42bfc7dd8f9c88fb140a",
+        "android_client_info": {
+          "package_name": "ind.emville.pms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDQ5O8DlNyvey36XbUTM1PjCoWa-XO-fcg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

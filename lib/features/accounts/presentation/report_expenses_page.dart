@@ -1,0 +1,679 @@
+// lib/features/accounts/presentation/report_expenses_page.dart
+import 'dart:io';
+import 'package:excel/excel.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+//import 'package:emville_pms/supabase_call.dart';
+// ✅ Responsive barrel
+import 'package:emville_pms/responsive/responsive.dart';
+
+class ReportExpensesPage extends StatefulWidget {
+  const ReportExpensesPage({super.key});
+
+  @override
+  State<ReportExpensesPage> createState() => _ReportExpensesPageState();
+}
+
+enum _RangeMode { monthly, yearly, custom }
+
+enum _TxStatusFilter { approved, pending, all }
+
+enum _ExportKind { excel, pdf }
+
+class _ReportExpensesPageState extends State<ReportExpensesPage> {
+  final _sb = Supabase.instance.client;
+
+  // Emville theme
+  static const Color _green = Color(0xFF103329);
+  static const Color _gold = Color(0xFFD9A633);
+
+  // Controls
+  _RangeMode _mode = _RangeMode.monthly;
+  _TxStatusFilter _status = _TxStatusFilter.approved;
+  _ExportKind _export = _ExportKind.excel;
+
+  // Monthly
+  DateTime _month = DateTime(DateTime.now().year, DateTime.now().month, 1);
+
+  // Yearly (FY Apr 1 → Mar 31)
+  int _fyStartYear = _defaultFyStart();
+
+  // Custom
+  DateTime _from = DateTime.now().subtract(const Duration(days: 30));
+  DateTime _to = DateTime.now();
+
+  static int _defaultFyStart() {
+    final now = DateTime.now();
+    return (now.month >= 4) ? now.year : now.year - 1;
+  }
+
+  DateTime get _rangeStart {
+    switch (_mode) {
+      case _RangeMode.monthly:
+        return DateTime(_month.year, _month.month, 1);
+      case _RangeMode.yearly:
+        return DateTime(_fyStartYear, 4, 1);
+      case _RangeMode.custom:
+        return DateTime(_from.year, _from.month, _from.day);
+    }
+  }
+
+  DateTime get _rangeEnd {
+    switch (_mode) {
+      case _RangeMode.monthly:
+        final s = DateTime(_month.year, _month.month, 1);
+        return DateTime(s.year, s.month + 1, 0);
+      case _RangeMode.yearly:
+        return DateTime(_fyStartYear + 1, 3, 31);
+      case _RangeMode.custom:
+        return DateTime(_to.year, _to.month, _to.day);
+    }
+  }
+
+  String get _statusFilterSqlValue {
+    switch (_status) {
+      case _TxStatusFilter.approved:
+        return 'approved';
+      case _TxStatusFilter.pending:
+        return 'pending';
+      case _TxStatusFilter.all:
+        return 'all';
+    }
+  }
+
+  // ----------------------------
+  // DATA FETCH
+  // ----------------------------
+  final _dfSql = DateFormat('yyyy-MM-dd');
+
+  Future<List<_ExpenseRow>> _fetchExpenseRows() async {
+    final startStr = _dfSql.format(_rangeStart);
+    final endStr = _dfSql.format(_rangeEnd);
+
+    var q = _sb.from('main_ledger').select(
+          'date, amount, transaction_type, payee_payer_name, remarks, transaction_status',
+        ) as PostgrestFilterBuilder;
+
+    q = q
+        .gte('date', startStr)
+        .lte('date', endStr)
+        .eq('transaction_type', 'expense');
+
+    if (_status != _TxStatusFilter.all) {
+      q = q.eq('transaction_status', _statusFilterSqlValue);
+    }
+
+    final rows = await q.order('date', ascending: true);
+    return ((rows ?? []) as List)
+        .map<_ExpenseRow>(
+          (m) => _ExpenseRow(
+            dateStr: (m['date'] as String?) ?? '',
+            amount: (m['amount'] as num?)?.toDouble() ?? 0.0,
+            details: _composeDetails(
+              m['payee_payer_name'] as String?,
+              m['remarks'] as String?,
+            ),
+          ),
+        )
+        .toList();
+  }
+
+  String _composeDetails(String? a, String? b) {
+    final x = (a ?? '').trim();
+    final y = (b ?? '').trim();
+    if (x.isEmpty && y.isEmpty) return '';
+    if (x.isEmpty) return y;
+    if (y.isEmpty) return x;
+    return '$x — $y';
+  }
+
+  // ----------------------------
+  // EXCEL EXPORT
+  // ----------------------------
+  void _writeRow(Sheet sheet, int row, List<dynamic> values) {
+    for (int col = 0; col < values.length; col++) {
+      final ci = CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row);
+      final v = values[col];
+      if (v == null) {
+        sheet.cell(ci).value = TextCellValue('');
+      } else if (v is num) {
+        sheet.cell(ci).value = DoubleCellValue(v.toDouble());
+      } else {
+        sheet.cell(ci).value = TextCellValue(v.toString());
+      }
+    }
+  }
+
+  Future<Directory> _preferredSaveDir() async {
+    if (Platform.isAndroid) {
+      final d = Directory('/storage/emulated/0/Download');
+      if (await d.exists()) return d;
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) return ext;
+      return await getApplicationDocumentsDirectory();
+    } else {
+      return await getApplicationDocumentsDirectory();
+    }
+  }
+
+  Future<void> _exportExcel(List<_ExpenseRow> rows) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Expenses Report'];
+    final dfOut = DateFormat('dd-MM-yyyy');
+
+    String fmtDate(String s) {
+      if (s.isEmpty) return '';
+      try {
+        return dfOut.format(DateTime.parse(s));
+      } catch (_) {
+        return s;
+      }
+    }
+
+    int r = 0;
+
+    _writeRow(sheet, r++, <dynamic>['Expenses Report']);
+    _writeRow(sheet, r++, <dynamic>[_rangeTitle()]);
+    _writeRow(sheet, r++, <dynamic>['Status: ${_status.name}']);
+    r++;
+
+    _writeRow(sheet, r++, <dynamic>['Date', 'Details', 'Amount (₹)']);
+
+    double total = 0.0;
+    for (final x in rows) {
+      total += x.amount;
+      _writeRow(sheet, r++, <dynamic>[fmtDate(x.dateStr), x.details, x.amount]);
+    }
+
+    // Blank + TOTAL
+    r++;
+    _writeRow(sheet, r++, <dynamic>['', 'Total', total]);
+
+    final dir = await _preferredSaveDir();
+    final fname =
+        'expenses_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.xlsx';
+    final file = File('${dir.path}/$fname');
+    final bytes = excel.encode();
+    await file.writeAsBytes(bytes!, flush: true);
+
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved: ${file.path}')));
+      await OpenFilex.open(file.path);
+    }
+  }
+
+  // ----------------------------
+  // PDF EXPORT
+  // ----------------------------
+  Future<void> _exportPdf(List<_ExpenseRow> rows) async {
+    // Fonts
+    final roboto = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+    );
+    final robotoItalic = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Roboto-Italic.ttf'),
+    );
+
+    // Logo (reuse your app icon)
+    final logoBytes = await rootBundle.load('assets/images/app_icon.png');
+    final logo = pw.MemoryImage(logoBytes.buffer.asUint8List());
+
+    // Brand colors
+    final brandGreen = const PdfColor(0.06, 0.20, 0.15); // #103329-ish
+    final brandGold = const PdfColor(0.85, 0.65, 0.20); // #D9A633-ish
+
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: roboto,
+        bold: roboto,
+        italic: robotoItalic,
+      ),
+    );
+
+    // Labels
+    final reportTitle = 'Expenses Report';
+    final subTitle = _rangeTitle();
+    final statusLine = 'Status: ${_status.name}';
+    final dfOut = DateFormat('dd-MM-yyyy');
+
+    // Table
+    final headers = <String>['Date', 'Details', 'Amount (₹)'];
+    final dataRows = <List<String>>[];
+    double total = 0.0;
+
+    for (final x in rows) {
+      total += x.amount;
+      dataRows.add([
+        x.dateStr.isEmpty ? '' : dfOut.format(DateTime.parse(x.dateStr)),
+        x.details,
+        x.amount.toStringAsFixed(2),
+      ]);
+    }
+
+    // Blank + TOTAL row
+    dataRows.add(['', '', '']);
+    dataRows.add(['', 'Total', total.toStringAsFixed(2)]);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+
+        // HEADER
+        header: (context) => pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: pw.BoxDecoration(color: brandGreen),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Container(
+                height: 75,
+                width: 75,
+                margin: const pw.EdgeInsets.only(right: 16),
+                child: pw.Image(logo, fit: pw.BoxFit.contain),
+              ),
+              pw.Expanded(
+                child: pw.Center(
+                  child: pw.Text(
+                    "Emville Hospitality",
+                    style: pw.TextStyle(
+                      color: brandGold,
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // FOOTER
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+        ),
+
+        // BODY
+        build: (_) => [
+          pw.SizedBox(height: 16),
+          pw.Text(
+            reportTitle,
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(subTitle, style: const pw.TextStyle(fontSize: 12)),
+          pw.Text(statusLine, style: const pw.TextStyle(fontSize: 12)),
+          pw.SizedBox(height: 12),
+          pw.TableHelper.fromTextArray(
+            headers: headers,
+            data: dataRows,
+            headerStyle: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.white,
+            ),
+            headerDecoration: pw.BoxDecoration(color: brandGreen),
+            cellAlignment: pw.Alignment.centerLeft,
+            headerAlignment: pw.Alignment.centerLeft,
+            cellStyle: const pw.TextStyle(fontSize: 10),
+            cellPadding: const pw.EdgeInsets.symmetric(
+              vertical: 6,
+              horizontal: 4,
+            ),
+            border: null,
+            columnWidths: {
+              0: const pw.FixedColumnWidth(72), // Date
+              1: const pw.FlexColumnWidth(3), // Details
+              2: const pw.FixedColumnWidth(80), // Amount
+            },
+          ),
+        ],
+      ),
+    );
+
+    final dir = await _preferredSaveDir();
+    final fname =
+        'expenses_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
+    final file = File('${dir.path}/$fname');
+    await file.writeAsBytes(await pdf.save(), flush: true);
+
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved: ${file.path}')));
+      await OpenFilex.open(file.path);
+    }
+  }
+
+  // ----------------------------
+  // UI HELPERS
+  // ----------------------------
+  String _rangeTitle() {
+    switch (_mode) {
+      case _RangeMode.monthly:
+        return 'Month: ${DateFormat('MMMM yyyy').format(_month)}';
+      case _RangeMode.yearly:
+        return 'Financial Year: $_fyStartYear–${_fyStartYear + 1}';
+      case _RangeMode.custom:
+        return 'From ${_dfSql.format(_rangeStart)} to ${_dfSql.format(_rangeEnd)}';
+    }
+  }
+
+  Future<void> _pickMonth() async {
+    final now = DateTime.now();
+    final first = DateTime(now.year - 5, 1, 1);
+    final last = DateTime(now.year + 5, 12, 31);
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _month,
+      firstDate: first,
+      lastDate: last,
+      helpText: 'Pick any day in the month',
+    );
+    if (picked != null) {
+      setState(() => _month = DateTime(picked.year, picked.month, 1));
+    }
+  }
+
+  Future<void> _pickFrom() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _from,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime.now(),
+      helpText: 'From date',
+    );
+    if (picked != null) setState(() => _from = picked);
+  }
+
+  Future<void> _pickTo() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _to,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: DateTime.now(),
+      helpText: 'To date',
+    );
+    if (picked != null) setState(() => _to = picked);
+  }
+
+  // ----------------------------
+  // BUILD (Emville layout only)
+  // ----------------------------
+  @override
+  Widget build(BuildContext context) {
+    final dfUi = DateFormat('dd MMM yyyy');
+    final rs = ResponsiveSize.of(context);
+
+    // Segmented buttons in Emville colors
+    final segStyle = ButtonStyle(
+      side: WidgetStateProperty.all(
+        const BorderSide(color: _green, width: 1.2),
+      ),
+      foregroundColor: WidgetStateProperty.resolveWith<Color>(
+        (states) => _green,
+      ),
+      backgroundColor: WidgetStateProperty.resolveWith<Color>(
+        (states) => states.contains(WidgetState.selected)
+            ? _gold.withValues(alpha: 0.18)
+            : Colors.white,
+      ),
+      overlayColor: WidgetStateProperty.all(_green.withValues(alpha: 0.06)),
+      shape: WidgetStateProperty.all(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: _green,
+        iconTheme: const IconThemeData(color: _gold),
+        title: Text(
+          'Expenses Report',
+          style: TextStyle(
+            color: _gold,
+            fontWeight: FontWeight.bold,
+            fontSize: rs.font(18),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        minimum: EdgeInsets.all(rs.space(16)),
+        child: ListView(
+          children: [
+            Text(
+              'Report Range',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _green,
+                fontSize: rs.font(14),
+              ),
+            ),
+            SizedBox(height: rs.space(8)),
+            SegmentedButton<_RangeMode>(
+              style: segStyle,
+              segments: const [
+                ButtonSegment(
+                  value: _RangeMode.monthly,
+                  label: Text('Monthly'),
+                ),
+                ButtonSegment(
+                  value: _RangeMode.yearly,
+                  label: Text('Yearly (FY)'),
+                ),
+                ButtonSegment(value: _RangeMode.custom, label: Text('From–To')),
+              ],
+              selected: {_mode},
+              onSelectionChanged: (s) => setState(() => _mode = s.first),
+            ),
+            SizedBox(height: rs.space(12)),
+            if (_mode == _RangeMode.monthly)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Month',
+                  style: TextStyle(
+                    color: _green,
+                    fontWeight: FontWeight.w600,
+                    fontSize: rs.font(14),
+                  ),
+                ),
+                subtitle: Text(
+                  DateFormat('MMMM yyyy').format(_month),
+                  style: TextStyle(color: _green, fontSize: rs.font(14)),
+                ),
+                trailing: IconButton(
+                  icon:
+                      Icon(Icons.date_range, color: _green, size: rs.icon(20)),
+                  onPressed: _pickMonth,
+                ),
+              ),
+            if (_mode == _RangeMode.yearly)
+              Row(
+                children: [
+                  Text(
+                    'Financial Year Start: ',
+                    style: TextStyle(
+                      color: _green,
+                      fontWeight: FontWeight.w600,
+                      fontSize: rs.font(14),
+                    ),
+                  ),
+                  SizedBox(width: rs.space(12)),
+                  DropdownButton<int>(
+                    value: _fyStartYear,
+                    dropdownColor: Colors.white,
+                    items: List.generate(12, (i) {
+                      final y = _defaultFyStart() - 6 + i;
+                      return DropdownMenuItem(
+                        value: y,
+                        child: Text(
+                          '$y–${y + 1}',
+                          style:
+                              TextStyle(color: _green, fontSize: rs.font(14)),
+                        ),
+                      );
+                    }),
+                    onChanged: (v) => setState(() => _fyStartYear = v!),
+                  ),
+                ],
+              ),
+            if (_mode == _RangeMode.custom)
+              Row(
+                children: [
+                  Expanded(
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'From',
+                        style: TextStyle(
+                          color: _green,
+                          fontWeight: FontWeight.w600,
+                          fontSize: rs.font(14),
+                        ),
+                      ),
+                      subtitle: Text(
+                        dfUi.format(_from),
+                        style: TextStyle(color: _green, fontSize: rs.font(14)),
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(Icons.date_range,
+                            color: _green, size: rs.icon(20)),
+                        onPressed: _pickFrom,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: rs.space(8)),
+                  Expanded(
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'To',
+                        style: TextStyle(
+                          color: _green,
+                          fontWeight: FontWeight.w600,
+                          fontSize: rs.font(14),
+                        ),
+                      ),
+                      subtitle: Text(
+                        dfUi.format(_to),
+                        style: TextStyle(color: _green, fontSize: rs.font(14)),
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(Icons.date_range,
+                            color: _green, size: rs.icon(20)),
+                        onPressed: _pickTo,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            Divider(height: rs.space(24), color: _green.withValues(alpha: 0.2)),
+            Text(
+              'Transaction Status',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _green,
+                fontSize: rs.font(14),
+              ),
+            ),
+            SizedBox(height: rs.space(8)),
+            SegmentedButton<_TxStatusFilter>(
+              style: segStyle,
+              segments: const [
+                ButtonSegment(
+                  value: _TxStatusFilter.approved,
+                  label: Text('Approved'),
+                ),
+                ButtonSegment(
+                  value: _TxStatusFilter.pending,
+                  label: Text('Pending'),
+                ),
+                ButtonSegment(value: _TxStatusFilter.all, label: Text('All')),
+              ],
+              selected: {_status},
+              onSelectionChanged: (s) => setState(() => _status = s.first),
+            ),
+            Divider(height: rs.space(24), color: _green.withValues(alpha: 0.2)),
+            Text(
+              'File Type',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: _green,
+                fontSize: rs.font(14),
+              ),
+            ),
+            SizedBox(height: rs.space(8)),
+            SegmentedButton<_ExportKind>(
+              style: segStyle,
+              segments: const [
+                ButtonSegment(value: _ExportKind.excel, label: Text('Excel')),
+                ButtonSegment(value: _ExportKind.pdf, label: Text('PDF')),
+              ],
+              selected: {_export},
+              onSelectionChanged: (s) => setState(() => _export = s.first),
+            ),
+            SizedBox(height: rs.space(24)),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _green,
+                foregroundColor: _gold,
+                padding: EdgeInsets.symmetric(
+                  horizontal: rs.space(16),
+                  vertical: rs.space(14),
+                ),
+                textStyle: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: rs.font(14),
+                ),
+              ),
+              icon: Icon(Icons.insert_drive_file_outlined, size: rs.icon(20)),
+              label: const Text('Generate'),
+              onPressed: () async {
+                try {
+                  final rows = await _fetchExpenseRows();
+                  if (_export == _ExportKind.excel) {
+                    await _exportExcel(rows);
+                  } else {
+                    await _exportPdf(rows);
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(
+                    // ignore: use_build_context_synchronously
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------- Models ----------
+class _ExpenseRow {
+  _ExpenseRow({
+    required this.dateStr, // yyyy-MM-dd
+    required this.amount,
+    required this.details,
+  });
+
+  final String dateStr;
+  final double amount;
+  final String details;
+}
