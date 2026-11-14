@@ -39,3 +39,17 @@ The Accounts overview follows accounts-v2 with the same pool photo as the Bookin
 Income, expense and petty cash receipt forms accept receipts/photos/PDFs and always submit pending, including owner/admin entries. Fund petty cash pre-fills the main expense receiver as Petty cash. It writes one main expense and relies on the existing database link to generate petty income; the client never adds a duplicate top-up. Upload failure reports that the entry was saved without its attachment. Pending queues allow owner/admin review; normal users query their own submissions.
 
 Validated with 29 isolated tests and Flutter screen captures; the analyzer retains its 10 pre-existing informational findings. No production financial records were modified.
+
+## Booking details and billing
+
+The four approved designs are now implemented in BookingDetailsPage, BookingsBillingPage, BookingsAddBillPage and the finalise dialog. Shared booking presentation primitives live in lib/features/bookings/booking_style.dart. Each page keeps the branded header and primary navigation, scrolls its content and pins its primary actions. Extra items use a single page scroll and compact empty states. Currency formatting retains cents and non-INR currency codes.
+
+Existing bookings/extras queries, date requirements, bill confirmation/insert, discount arithmetic, review/proof attachment, pending main-ledger entry, finalised flag and saved PDF workflow are retained. Finalise still opens a modal and requires a separate review before saving. Check-out-before-check-in is rejected, and opening the check-in date picker for a future reservation no longer asserts.
+
+Isolated widget tests cover 320/390/1024 widths, add-bill payload and refreshed totals, cancellation, discount review without writes, invalid checkout dates and money precision. No live booking or financial records were modified.
+
+## Secondary navigation and report selectors
+
+Home, Bookings, Accounts and Property retain the menu button. EmvillePage now displays an actual top-left Back arrow instead of making the logo the back target. Secondary drawer destinations are pushed as routes, so both visible Back and system Back return to the originating tab. Legacy secondary pages retain their native AppBar back buttons.
+
+The five accounting report selectors share report_options_page.dart: ivory background, centered brand header, serif section headings, paper cards, compact forest-green selections, a current-options summary and a fixed Generate report button. Existing monthly, financial-year, custom-date and P&L quarterly choices, status filters, export implementations and main-ledger role guard remain intact. Export controls disable during generation to prevent duplicate exports.

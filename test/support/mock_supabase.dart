@@ -11,6 +11,7 @@ class EmvilleTestBackend {
   bool failCalendar = false;
   List<Map<String, dynamic>>? bookingRows;
   final bookingReads = <Uri>[];
+  final extras = <Map<String, dynamic>>[];
   final reads = <Uri>[];
   final writes = <String>[];
   final removed = <String>{};
@@ -168,8 +169,15 @@ class EmvilleTestBackend {
       };
     } else if (request.method == 'POST' &&
         (path.endsWith('/main_ledger') ||
-            path.endsWith('/petty_cash_ledger'))) {
+            path.endsWith('/petty_cash_ledger') ||
+            path.endsWith('/bookings_extras'))) {
       writes.add('POST $path ${request.body}');
+      if (path.endsWith('/bookings_extras')) {
+        extras.add({
+          ...jsonDecode(request.body) as Map<String, dynamic>,
+          'created_at': DateTime.now().toIso8601String()
+        });
+      }
       body = {'id': 'new-entry'};
     } else if (request.method == 'PATCH' || request.method == 'DELETE') {
       writes.add('${request.method} $path ${request.body}');
@@ -252,6 +260,10 @@ class EmvilleTestBackend {
             }
         ];
       }
+    } else if (path.endsWith('/bookings_extras')) {
+      body = extras
+          .where((r) => query['bill_type'] == 'eq.${r['bill_type']}')
+          .toList();
     } else if (path.endsWith('/booking_details')) {
       bookingReads.add(request.url);
       body = bookingRows ??
@@ -289,6 +301,11 @@ class EmvilleTestBackend {
               'no_of_pax': 2
             },
           ];
+      if (query['id'] != null) {
+        body = (body as List)
+            .where((r) => query['id'] == 'eq.${r['id']}')
+            .toList();
+      }
       final offset = int.tryParse(query['offset'] ?? '0') ?? 0;
       final limit = int.tryParse(query['limit'] ?? '');
       if (limit != null) {

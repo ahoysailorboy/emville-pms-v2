@@ -80,10 +80,25 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
-  void _select(_Menu m) {
-    setState(() => _selected = m);
-    EmvilleNavigation.section.value = _destinations.indexOf(m);
-    Navigator.of(context).pop();
+  void _select(_Menu menu) {
+    Navigator.of(context).pop(); // Close the drawer before opening a route.
+    final index = _destinations.indexOf(menu);
+    if (index >= 0) {
+      setState(() => _selected = menu);
+      EmvilleNavigation.section.value = index;
+      return;
+    }
+    final page = switch (menu) {
+      _Menu.reports => const GenerateReportsPage(),
+      _Menu.pmsTasks => const AddPmsTaskPage(),
+      _Menu.pmsReports => const GeneratePmsReportPage(),
+      _Menu.editPmsTasks => const EditPmsPage(),
+      _Menu.myProfile => const MyProfilePage(),
+      _Menu.userManagement => const UserManagementPage(),
+      _Menu.advancedSearch => const PmsAdvancedSearchPage(),
+      _ => const SizedBox.shrink(),
+    };
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
   @override

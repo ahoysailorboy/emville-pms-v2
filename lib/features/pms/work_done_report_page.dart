@@ -1,3 +1,4 @@
+import 'package:emville_pms/ui/emville_pdf_letterhead.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -281,10 +282,8 @@ class _WorkDoneReportPageState extends State<WorkDoneReportPage> {
       final robotoItalic = pw.Font.ttf(
         await rootBundle.load('assets/fonts/Roboto-Italic.ttf'),
       );
-      final logoBytes = await rootBundle.load('assets/images/app_icon.png');
+      final logoBytes = await rootBundle.load('assets/brand/emville-logo.png');
       final logo = pw.MemoryImage(logoBytes.buffer.asUint8List());
-      const brandGreen = PdfColor(0.06, 0.20, 0.15);
-      const brandGold = PdfColor(0.85, 0.65, 0.20);
 
       // 6) Download & prepare images ahead of time
       final rawPhotos = <int, Uint8List?>{};
@@ -337,36 +336,7 @@ class _WorkDoneReportPageState extends State<WorkDoneReportPage> {
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(24),
-          header: (context) => pw.Container(
-            padding: const pw.EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 10,
-            ),
-            decoration: const pw.BoxDecoration(color: brandGreen),
-            child: pw.Row(
-              crossAxisAlignment: pw.CrossAxisAlignment.center,
-              children: [
-                pw.Container(
-                  height: 75,
-                  width: 75,
-                  margin: const pw.EdgeInsets.only(right: 16),
-                  child: pw.Image(logo, fit: pw.BoxFit.contain),
-                ),
-                pw.Expanded(
-                  child: pw.Center(
-                    child: pw.Text(
-                      "Emville PMS",
-                      style: pw.TextStyle(
-                        color: brandGold,
-                        fontSize: 20,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          header: (context) => emvillePdfLetterhead(logo),
           footer: (context) => pw.Align(
             alignment: pw.Alignment.centerRight,
             child: pw.Text(

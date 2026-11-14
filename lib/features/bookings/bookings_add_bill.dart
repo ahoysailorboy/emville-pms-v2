@@ -1,3 +1,4 @@
+import 'booking_style.dart';
 // lib/features/bookings/bookings_add_bill.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,8 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:emville_pms/responsive/responsive_text.dart';
-import 'package:emville_pms/responsive/responsive_theme.dart';
-import 'package:emville_pms/responsive/responsive_size.dart';
 
 // --- Emville brand colors ---
 const emGreen = Color(0xFF103329);
@@ -151,8 +150,8 @@ class _BookingsAddBillPageState extends State<BookingsAddBillPage> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: emGold,
-                foregroundColor: emGreen,
+                backgroundColor: Emville.forest,
+                foregroundColor: Emville.paper,
               ),
               onPressed: () => Navigator.pop(context, true),
               child: const ResponsiveText('Confirm',
@@ -163,7 +162,7 @@ class _BookingsAddBillPageState extends State<BookingsAddBillPage> {
       },
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !mounted || _submitting) return;
 
     try {
       setState(() => _submitting = true);
@@ -202,291 +201,120 @@ class _BookingsAddBillPageState extends State<BookingsAddBillPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final tokens = R.tokens(context);
-    final rs = ResponsiveSize.of(context);
-    final df = DateFormat('EEE, d MMM yyyy');
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: emGreen,
-        foregroundColor: Colors.white,
-        title: const ResponsiveText(
-          'Add bill',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-      ),
-      backgroundColor: const Color(0xFFF7F7F7),
-      body: SafeArea(
-        child: FutureBuilder<void>(
-          future: _initFuture,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.hasError) {
-              return _ErrorState(
-                error: snap.error,
-                onRetry: () async =>
-                    setState(() => _initFuture = _loadGuestName()),
-              );
-            }
-
-            return SingleChildScrollView(
-              padding: EdgeInsets.all(tokens.padding),
-              child: Form(
-                key: _formKey,
-                autovalidateMode: AutovalidateMode.disabled,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _SectionCard(
-                      title: 'Bill Details',
-                      child: Column(
-                        children: [
-                          // Date (picker)
-                          _FieldLabel('Date'),
-                          InkWell(
-                            onTap: _pickDate,
+  Widget build(BuildContext context) => FutureBuilder<void>(
+      future: _initFuture,
+      builder: (context, snapshot) => BookingFrame(
+              title: 'Add bill',
+              eyebrow: 'Bookings / Billing',
+              subtitle: 'Every extra, clearly accounted for.',
+              actions: snapshot.hasError ||
+                      snapshot.connectionState == ConnectionState.waiting
+                  ? null
+                  : FilledButton.icon(
+                      onPressed: _submitting ? null : _submit,
+                      icon: _submitting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.add, size: 17),
+                      label: Text(_submitting ? 'Adding…' : 'Add bill')),
+              children: [
+                if (snapshot.hasError)
+                  EmvilleError(onRetry: () async {
+                    setState(() {
+                      _initFuture = _loadGuestName();
+                    });
+                  })
+                else if (snapshot.connectionState == ConnectionState.waiting)
+                  const Center(child: CircularProgressIndicator())
+                else ...[
+                  Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                          color: Emville.sage,
+                          borderRadius: BorderRadius.circular(12)),
+                      child: Row(children: [
+                        const Icon(Icons.person_outline, size: 19),
+                        const SizedBox(width: 12),
+                        Expanded(
+                            child: Text(_guestNameCtrl.text,
+                                style: Emville.heading(20))),
+                        const Icon(Icons.lock_outline,
+                            size: 14, color: Emville.muted)
+                      ])),
+                  bookingSection('Bill details'),
+                  Form(
+                      key: _formKey,
+                      child: BookingCard(children: [
+                        bookingLabel('Date'),
+                        InkWell(
+                            key: const ValueKey('bill-date'),
+                            onTap: _submitting ? null : _pickDate,
                             child: InputDecorator(
-                              decoration: _decoration(hint: 'Select bill date'),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  ResponsiveText(
-                                    _billDate == null
-                                        ? '—'
-                                        : df.format(_billDate!.toLocal()),
-                                    style: const TextStyle(fontSize: 14),
-                                  ),
-                                  const Icon(Icons.calendar_today,
-                                      color: emGreen, size: 18),
-                                ],
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: R.space(context, 12)),
-
-                          // Guest Name (read-only)
-                          _FieldLabel('Guest Name'),
-                          TextFormField(
-                            controller: _guestNameCtrl,
-                            enabled: false,
-                            style: TextStyle(fontSize: R.font(context, 14)),
-                            decoration: _decoration(),
-                          ),
-                          SizedBox(height: R.space(context, 12)),
-
-                          // Bill type
-                          _FieldLabel('Bill type'),
-                          DropdownButtonFormField<String>(
+                                decoration: bookingDecoration(),
+                                child: Row(children: [
+                                  Expanded(
+                                      child: Text(
+                                          _billDate == null
+                                              ? 'Select bill date'
+                                              : DateFormat('d MMM yyyy')
+                                                  .format(_billDate!),
+                                          style:
+                                              const TextStyle(fontSize: 12))),
+                                  const Icon(Icons.calendar_today_outlined,
+                                      size: 16)
+                                ]))),
+                        const SizedBox(height: 18),
+                        bookingLabel('Bill type'),
+                        DropdownButtonFormField<String>(
+                            key: const ValueKey('bill-type'),
                             initialValue: _billType,
+                            isExpanded: true,
+                            style: const TextStyle(
+                                fontFamily: 'Roboto',
+                                fontSize: 12,
+                                color: Emville.ink),
+                            decoration:
+                                bookingDecoration(hint: 'Select bill type'),
                             items: const [
                               DropdownMenuItem(
-                                value: 'f&b',
-                                child: ResponsiveText('F&B',
-                                    style: TextStyle(fontSize: 14)),
-                              ),
+                                  value: 'f&b', child: Text('Food & beverage')),
                               DropdownMenuItem(
-                                value: 'other',
-                                child: ResponsiveText('Other',
-                                    style: TextStyle(fontSize: 14)),
-                              ),
+                                  value: 'other', child: Text('Other'))
                             ],
-                            onChanged: (v) => setState(() => _billType = v),
-                            decoration: _decoration(hint: 'Select bill type'),
-                          ),
-                          SizedBox(height: R.space(context, 12)),
-
-                          // Amount
-                          _FieldLabel('Bill amount'),
-                          TextFormField(
+                            onChanged: _submitting
+                                ? null
+                                : (v) => setState(() => _billType = v)),
+                        const SizedBox(height: 18),
+                        bookingLabel('Bill amount'),
+                        TextFormField(
+                            key: const ValueKey('bill-amount'),
                             controller: _amountCtrl,
+                            enabled: !_submitting,
                             keyboardType: const TextInputType.numberWithOptions(
                                 decimal: true),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(RegExp(
-                                  r'^\d*\.?\d{0,2}')), // up to 2 decimals
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d*\.?\d{0,2}'))
                             ],
-                            style: TextStyle(fontSize: R.font(context, 14)),
-                            decoration: _decoration(hint: '0.00'),
-                          ),
-                          SizedBox(height: R.space(context, 12)),
-
-                          // Remarks
-                          _FieldLabel('Remarks'),
-                          TextFormField(
+                            style: const TextStyle(fontSize: 12),
+                            decoration: bookingDecoration(hint: '0.00')),
+                        const SizedBox(height: 18),
+                        bookingLabel('Remarks'),
+                        TextFormField(
+                            key: const ValueKey('bill-remarks'),
                             controller: _remarksCtrl,
+                            enabled: !_submitting,
                             maxLines: 3,
-                            style: TextStyle(fontSize: R.font(context, 14)),
-                            decoration: _decoration(hint: 'e.g., Dinner - 500'),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    SizedBox(height: R.space(context, 24)),
-
-                    // Submit button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: emGold,
-                          foregroundColor: emGreen,
-                          padding: EdgeInsets.symmetric(vertical: rs.h(14)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(tokens.radius),
-                          ),
-                          elevation: 1,
-                        ),
-                        onPressed: _submitting ? null : _submit,
-                        child: _submitting
-                            ? const SizedBox(
-                                height: 18,
-                                width: 18,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: emGreen),
-                              )
-                            : const ResponsiveText(
-                                'Submit',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 16),
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  // --- UI helpers ---
-  InputDecoration _decoration({String? hint}) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: Colors.black38),
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: R.space(context, 12),
-        vertical: R.space(context, 12),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Color(0x22000000)),
-        borderRadius: BorderRadius.circular(R.tokens(context).radius),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: emGreen, width: 1.2),
-        borderRadius: BorderRadius.circular(R.tokens(context).radius),
-      ),
-      disabledBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Color(0x11000000)),
-        borderRadius: BorderRadius.circular(R.tokens(context).radius),
-      ),
-    );
-  }
-}
-
-// --- Reusable bits ---
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final Widget child;
-  const _SectionCard({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = R.tokens(context);
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0x11000000)),
-        borderRadius: BorderRadius.circular(tokens.radius),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.padding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ResponsiveText(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-                color: emGreen,
-              ),
-            ),
-            SizedBox(height: R.space(context, 10)),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FieldLabel extends StatelessWidget {
-  final String text;
-  const _FieldLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: R.space(context, 6)),
-      child: ResponsiveText(
-        text,
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-          color: Colors.black87,
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final Object? error;
-  final Future<void> Function() onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(R.space(context, 24)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline,
-                size: R.icon(context, 36), color: Colors.redAccent),
-            SizedBox(height: R.space(context, 12)),
-            ResponsiveText(
-              'Something went wrong.\n${error ?? ''}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14),
-            ),
-            SizedBox(height: R.space(context, 16)),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: emGold,
-                foregroundColor: emGreen,
-              ),
-              onPressed: onRetry,
-              child: const ResponsiveText(
-                'Retry',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+                            style: const TextStyle(fontSize: 12),
+                            decoration:
+                                bookingDecoration(hint: 'e.g. Dinner · 500'))
+                      ])),
+                  const SizedBox(height: 14),
+                  const Text('This bill will be added to this guest’s stay.',
+                      style: TextStyle(
+                          fontSize: 10, color: Emville.muted, height: 1.5)),
+                ]
+              ]));
 }

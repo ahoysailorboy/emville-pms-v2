@@ -1,3 +1,6 @@
+import 'package:emville_pms/ui/emville_widgets.dart';
+import 'package:emville_pms/ui/report_options_page.dart';
+import 'package:emville_pms/ui/emville_pdf_letterhead.dart';
 import '../data/finance_access.dart';
 // lib/features/accounts/presentation/report_ledger_page.dart
 import 'dart:io';
@@ -12,7 +15,6 @@ import 'package:pdf/pdf.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 // ✅ Responsive helper (same one used elsewhere in the app)
-import 'package:emville_pms/responsive/responsive.dart';
 
 class ReportLedgerPage extends StatefulWidget {
   const ReportLedgerPage({super.key});
@@ -27,9 +29,8 @@ class _ReportAccessState extends State<ReportLedgerPage> {
       future: _access,
       builder: (context, snapshot) {
         if (snapshot.data == true) return const _ProtectedLedgerReport();
-        return Scaffold(
-            appBar: AppBar(title: const Text('Main ledger report')),
-            body: Center(
+        return EmvillePage(
+            child: Center(
                 child: Text(snapshot.connectionState == ConnectionState.done
                     ? 'Only owners and admins can view main ledger balances.'
                     : 'Loading…')));
@@ -53,8 +54,6 @@ class __ProtectedLedgerReportState extends State<_ProtectedLedgerReport> {
   final _sb = Supabase.instance.client;
 
   // Emville theme
-  static const Color _green = Color(0xFF103329);
-  static const Color _gold = Color(0xFFD9A633);
 
   // Controls
   _RangeMode _mode = _RangeMode.monthly;
@@ -311,11 +310,10 @@ class __ProtectedLedgerReportState extends State<_ProtectedLedgerReport> {
       await rootBundle.load('assets/fonts/Roboto-Italic.ttf'),
     );
 
-    final logoBytes = await rootBundle.load('assets/images/app_icon.png');
+    final logoBytes = await rootBundle.load('assets/brand/emville-logo.png');
     final logo = pw.MemoryImage(logoBytes.buffer.asUint8List());
 
     final brandGreen = const PdfColor(0.06, 0.20, 0.15); // ~ #103329
-    final brandGold = const PdfColor(0.85, 0.65, 0.20); // ~ #D9A633
 
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
@@ -393,33 +391,7 @@ class __ProtectedLedgerReportState extends State<_ProtectedLedgerReport> {
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(24),
-        header: (context) => pw.Container(
-          padding: const pw.EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: pw.BoxDecoration(color: brandGreen),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.Container(
-                height: 75,
-                width: 75,
-                margin: const pw.EdgeInsets.only(right: 16),
-                child: pw.Image(logo, fit: pw.BoxFit.contain),
-              ),
-              pw.Expanded(
-                child: pw.Center(
-                  child: pw.Text(
-                    "Emville Hospitality",
-                    style: pw.TextStyle(
-                      color: brandGold,
-                      fontSize: 20,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        header: (context) => emvillePdfLetterhead(logo),
         footer: (context) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -536,256 +508,55 @@ class __ProtectedLedgerReportState extends State<_ProtectedLedgerReport> {
   // BUILD (layout only themed)
   // ----------------------------
   @override
-  Widget build(BuildContext context) {
-    final dfUi = DateFormat('dd MMM yyyy');
-    final rs = ResponsiveSize.of(context);
-
-    // Uniform SegmentedButton style in Emville colors
-    final segStyle = ButtonStyle(
-      side: WidgetStateProperty.all(
-        const BorderSide(color: _green, width: 1.2),
-      ),
-      foregroundColor: WidgetStateProperty.resolveWith<Color>(
-        (states) => _green,
-      ),
-      backgroundColor: WidgetStateProperty.resolveWith<Color>(
-        (states) => states.contains(WidgetState.selected)
-            ? _gold.withValues(alpha: 0.18)
-            : Colors.white,
-      ),
-      overlayColor: WidgetStateProperty.all(_green.withValues(alpha: 0.06)),
-      shape: WidgetStateProperty.all(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _green,
-        iconTheme: const IconThemeData(color: _gold),
-        title: Text(
-          'Main Ledger Report',
-          style: TextStyle(
-            color: _gold,
-            fontWeight: FontWeight.bold,
-            fontSize: rs.font(18),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        minimum: EdgeInsets.all(rs.space(16)),
-        child: ListView(
-          children: [
-            Text(
-              'Report Range',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: _green,
-                fontSize: rs.font(14),
-              ),
-            ),
-            SizedBox(height: rs.space(8)),
-            SegmentedButton<_RangeMode>(
-              style: segStyle,
-              segments: const [
-                ButtonSegment(
-                  value: _RangeMode.monthly,
-                  label: Text('Monthly'),
-                ),
-                ButtonSegment(
-                  value: _RangeMode.yearly,
-                  label: Text('Yearly (FY)'),
-                ),
-                ButtonSegment(value: _RangeMode.custom, label: Text('From–To')),
-              ],
-              selected: {_mode},
-              onSelectionChanged: (s) => setState(() => _mode = s.first),
-            ),
-            SizedBox(height: rs.space(12)),
-            if (_mode == _RangeMode.monthly)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Month',
-                  style: TextStyle(
-                    color: _green,
-                    fontWeight: FontWeight.w600,
-                    fontSize: rs.font(14),
-                  ),
-                ),
-                subtitle: Text(
-                  DateFormat('MMMM yyyy').format(_month),
-                  style: TextStyle(color: _green, fontSize: rs.font(14)),
-                ),
-                trailing: IconButton(
-                  icon:
-                      Icon(Icons.date_range, color: _green, size: rs.icon(20)),
-                  onPressed: _pickMonth,
-                ),
-              ),
-            if (_mode == _RangeMode.yearly)
-              Row(
-                children: [
-                  Text(
-                    'Financial Year Start: ',
-                    style: TextStyle(
-                      color: _green,
-                      fontWeight: FontWeight.w600,
-                      fontSize: rs.font(14),
-                    ),
-                  ),
-                  SizedBox(width: rs.space(12)),
-                  DropdownButton<int>(
-                    value: _fyStartYear,
-                    dropdownColor: Colors.white,
-                    items: List.generate(12, (i) {
-                      final y = _defaultFyStart() - 6 + i;
-                      return DropdownMenuItem(
-                        value: y,
-                        child: Text(
-                          '$y–${y + 1}',
-                          style:
-                              TextStyle(color: _green, fontSize: rs.font(14)),
-                        ),
-                      );
-                    }),
-                    onChanged: (v) => setState(() => _fyStartYear = v!),
-                  ),
-                ],
-              ),
-            if (_mode == _RangeMode.custom)
-              Row(
-                children: [
-                  Expanded(
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'From',
-                        style: TextStyle(
-                          color: _green,
-                          fontWeight: FontWeight.w600,
-                          fontSize: rs.font(14),
-                        ),
-                      ),
-                      subtitle: Text(
-                        dfUi.format(_from),
-                        style: TextStyle(color: _green, fontSize: rs.font(14)),
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(Icons.date_range,
-                            color: _green, size: rs.icon(20)),
-                        onPressed: _pickFrom,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: rs.space(8)),
-                  Expanded(
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        'To',
-                        style: TextStyle(
-                          color: _green,
-                          fontWeight: FontWeight.w600,
-                          fontSize: rs.font(14),
-                        ),
-                      ),
-                      subtitle: Text(
-                        dfUi.format(_to),
-                        style: TextStyle(color: _green, fontSize: rs.font(14)),
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(Icons.date_range,
-                            color: _green, size: rs.icon(20)),
-                        onPressed: _pickTo,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            Divider(height: rs.space(24), color: _green.withValues(alpha: 0.2)),
-            Text(
-              'Transaction Status',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: _green,
-                fontSize: rs.font(14),
-              ),
-            ),
-            SizedBox(height: rs.space(8)),
-            SegmentedButton<_TxStatusFilter>(
-              style: segStyle,
-              segments: const [
-                ButtonSegment(
-                  value: _TxStatusFilter.approved,
-                  label: Text('Approved'),
-                ),
-                ButtonSegment(
-                  value: _TxStatusFilter.pending,
-                  label: Text('Pending'),
-                ),
-                ButtonSegment(value: _TxStatusFilter.all, label: Text('All')),
-              ],
-              selected: {_status},
-              onSelectionChanged: (s) => setState(() => _status = s.first),
-            ),
-            Divider(height: rs.space(24), color: _green.withValues(alpha: 0.2)),
-            Text(
-              'File Type',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: _green,
-                fontSize: rs.font(14),
-              ),
-            ),
-            SizedBox(height: rs.space(8)),
-            SegmentedButton<_ExportKind>(
-              style: segStyle,
-              segments: const [
-                ButtonSegment(value: _ExportKind.excel, label: Text('Excel')),
-                ButtonSegment(value: _ExportKind.pdf, label: Text('PDF')),
-              ],
-              selected: {_export},
-              onSelectionChanged: (s) => setState(() => _export = s.first),
-            ),
-            SizedBox(height: rs.space(24)),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: _green,
-                foregroundColor: _gold,
-                padding: EdgeInsets.symmetric(
-                  horizontal: rs.space(16),
-                  vertical: rs.space(14),
-                ),
-                textStyle: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: rs.font(14),
-                ),
-              ),
-              icon: Icon(Icons.insert_drive_file_outlined, size: rs.icon(20)),
-              label: const Text('Generate'),
-              onPressed: () async {
-                try {
-                  final data = await _fetchLedgerData();
-                  if (_export == _ExportKind.excel) {
-                    await _exportExcel(data);
-                  } else {
-                    await _exportPdf(data);
-                  }
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(
-                    // ignore: use_build_context_synchronously
-                    context,
-                  ).showSnackBar(SnackBar(content: Text('Failed: $e')));
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ReportOptionsPage(
+        title: 'Main ledger report',
+        period: _mode.name,
+        periodLabels: const {
+          'monthly': 'Monthly',
+          'yearly': 'Yearly (FY)',
+          'custom': 'From–To'
+        },
+        onPeriod: (v) => setState(
+            () => _mode = _RangeMode.values.firstWhere((m) => m.name == v)),
+        dateSelection: _mode == _RangeMode.monthly
+            ? reportDateField(
+                'Month', DateFormat('MMMM yyyy').format(_month), _pickMonth)
+            : _mode == _RangeMode.yearly
+                ? reportYearField(_fyStartYear, _defaultFyStart(),
+                    (v) => setState(() => _fyStartYear = v))
+                : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                        child: reportDateField('From',
+                            DateFormat('d MMM yyyy').format(_from), _pickFrom)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: reportDateField('To',
+                            DateFormat('d MMM yyyy').format(_to), _pickTo))
+                  ]),
+        status: _status.name,
+        onStatus: (v) => setState(() =>
+            _status = _TxStatusFilter.values.firstWhere((s) => s.name == v)),
+        format: _export.name,
+        onFormat: (v) => setState(
+            () => _export = _ExportKind.values.firstWhere((e) => e.name == v)),
+        rangeSummary: _rangeTitle(),
+        onGenerate: () async {
+          try {
+            final data = await _fetchLedgerData();
+            if (_export == _ExportKind.excel) {
+              await _exportExcel(data);
+            } else {
+              await _exportPdf(data);
+            }
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(
+              // ignore: use_build_context_synchronously
+              context,
+            ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+          }
+        },
+      );
 }
 
 // ---------- Models ----------

@@ -2,7 +2,7 @@ name: emville_pms
 description: "A new Flutter project."
 publish_to: "none"
 
-version: 1.0.1+1
+version: 1.2.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -78,9 +78,10 @@ flutter:
     - assets/fonts/Roboto-Italic.ttf
     # - .env   # (left commented on purpose)
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icons/app_icon.png"
-  adaptive_icon_background: "#0B3D2E"
-  adaptive_icon_foreground: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  remove_alpha_ios: true

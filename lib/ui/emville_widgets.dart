@@ -395,22 +395,15 @@ class EmvilleHeader extends StatelessWidget {
                 height: home ? 60 : 51,
                 child: Row(children: [
                   IconButton(
-                    tooltip: 'Open menu',
-                    onPressed:
-                        onMenu ?? () => EmvilleNavigation.openMenu(context),
+                    tooltip: back ? 'Back' : 'Open menu',
+                    onPressed: back
+                        ? () => Navigator.of(context).maybePop()
+                        : onMenu ?? () => EmvilleNavigation.openMenu(context),
                     padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.menu, size: 23, color: Emville.ink),
+                    icon: Icon(back ? Icons.arrow_back : Icons.menu,
+                        size: 23, color: Emville.ink),
                   ),
-                  Expanded(
-                      child: Center(
-                          child: back
-                              ? Tooltip(
-                                  message: 'Back',
-                                  child: InkWell(
-                                      onTap: () =>
-                                          Navigator.of(context).maybePop(),
-                                      child: logo))
-                              : logo)),
+                  Expanded(child: Center(child: logo)),
                   SizedBox(width: 48, child: Center(child: avatar)),
                 ]))));
   }

@@ -1,3 +1,5 @@
+import 'booking_style.dart';
+import 'package:emville_pms/ui/emville_pdf_letterhead.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -111,6 +113,8 @@ class _BookingsFinaliseBillPageState extends State<BookingsFinaliseBillPage> {
         .eq(kBookingIdCol, widget.bookingId)
         .maybeSingle();
 
+    if (booking == null) throw StateError('Booking not found.');
+
     // F&B
     final fnbRaw = await supa
         .from(kExtrasTable)
@@ -152,7 +156,7 @@ class _BookingsFinaliseBillPageState extends State<BookingsFinaliseBillPage> {
         guestName: ctx.guestName ?? '',
         checkIn: ctx.checkIn,
         initialCheckOut: now,
-        currency: ctx.currency,
+        currency: ctx.currency ?? 'INR',
         fnbTotal: ctx.fnbTotal,
         otherTotal: ctx.otherTotal,
       ),
@@ -278,83 +282,62 @@ class _BookingsFinaliseBillPageState extends State<BookingsFinaliseBillPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    // ignore: unused_local_variable
-    final tokens = R.tokens(context);
-
-    return FutureBuilder<_BillContext>(
+  Widget build(BuildContext context) => FutureBuilder<_BillContext>(
       future: _future,
-      builder: (context, snap) {
-        final loading = snap.connectionState == ConnectionState.waiting;
-        final error = snap.hasError ? snap.error : null;
-        final ctx = (!loading && error == null) ? snap.data : null;
-
-        // Auto-open dialog once the context is ready and dialog not shown
+      builder: (context, snapshot) {
+        final ctx = snapshot.data;
         if (ctx != null && !_dialogShown && _input == null) {
           _dialogShown = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _openFinaliseDialog(ctx);
+            if (mounted) _openFinaliseDialog(ctx);
           });
         }
-
-        final title = ctx == null
-            ? 'Finalise Bill'
-            : '${ctx.guestName ?? 'Guest'} • ${_d(ctx.checkIn)}';
-
-        return Scaffold(
-          appBar: AppBar(
-            backgroundColor: emGreen,
-            foregroundColor: Colors.white,
-            title: ResponsiveText(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-            ),
-          ),
-          backgroundColor: const Color(0xFFF7F7F7),
-          body: SafeArea(
-            child: Builder(
-              builder: (_) {
-                if (loading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (error != null) {
-                  return _ErrorState(
-                    error: error,
-                    onRetry: () async =>
-                        setState(() => _future = _loadContext()),
-                  );
-                }
-
-                // If input is present, show bill preview
-                if (_input != null) {
-                  final math = _BillMath(ctx!, _input!);
-                  return _BillPreviewSheet(
-                    ctx: ctx,
-                    input: _input!,
-                    math: math,
-                    onEdit: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              BookingsBillingPage(bookingId: widget.bookingId),
-                        ),
-                      );
-                    },
-                    onAttachProof: _pickProofImage,
-                    proofPicked: _proofImageBytes != null,
-                    onConfirm: () => _confirmAndSave(ctx),
-                  );
-                }
-
-                return const SizedBox.shrink();
-              },
-            ),
-          ),
-          // no FABs by request
-        );
-      },
-    );
-  }
+        if (_input != null && ctx != null) {
+          return EmvillePage(
+              section: 1,
+              child: EmvilleBody(
+                  child: Column(children: [
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 4, 22, 0),
+                    child: EmvilleHeading('Review final bill',
+                        eyebrow: 'Bookings / Billing',
+                        subtitle: ctx.guestName ?? 'Guest')),
+                Expanded(
+                    child: _BillPreviewSheet(
+                        ctx: ctx,
+                        input: _input!,
+                        math: _BillMath(ctx, _input!),
+                        onEdit: () {
+                          Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                  builder: (_) => BookingsBillingPage(
+                                      bookingId: widget.bookingId)));
+                        },
+                        onAttachProof: _pickProofImage,
+                        proofPicked: _proofImageBytes != null,
+                        onConfirm: () => _confirmAndSave(ctx)))
+              ])));
+        }
+        return BookingFrame(
+            title: 'Billing',
+            subtitle: ctx?.guestName ?? 'Review this stay before finalising.',
+            children: [
+              if (snapshot.hasError)
+                EmvilleError(onRetry: () async {
+                  setState(() {
+                    _future = _loadContext();
+                  });
+                })
+              else if (ctx == null)
+                const Center(child: CircularProgressIndicator())
+              else
+                BookingBalance(
+                    amount: ctx.balance + ctx.fnbTotal + ctx.otherTotal,
+                    currency: ctx.currency ?? 'INR',
+                    detail:
+                        'Room rent ${_m(ctx.roomTotal, ctx.currency)} · Advance paid ${_m(ctx.advancePaid, ctx.currency)}')
+            ]);
+      });
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -499,7 +482,7 @@ class _PdfService {
     required _FinaliseInput input,
   }) async {
     // --- Assets (guarded) ---
-    final logoBytes = await rootBundle.load('assets/images/app_icon.png');
+    final logoBytes = await rootBundle.load('assets/brand/emville-logo.png');
     final logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
 
     // --- Fonts (Roboto Regular & Italic) ---
@@ -666,34 +649,7 @@ class _PdfService {
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
-            // Header band with logo + title
-            pw.Container(
-              color: pdfGreen,
-              padding: const pw.EdgeInsets.all(14),
-              child: pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Container(
-                    width: 36,
-                    height: 36,
-                    decoration: pw.BoxDecoration(
-                      shape: pw.BoxShape.circle,
-                      image: pw.DecorationImage(
-                          image: logoImage, fit: pw.BoxFit.cover),
-                    ),
-                  ),
-                  pw.SizedBox(width: 12),
-                  pw.Text(
-                    'Emville Hospitality',
-                    style: pw.TextStyle(
-                      color: pdfGold,
-                      fontSize: 20,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            emvillePdfLetterhead(logoImage),
             pw.SizedBox(height: hLarge),
 
             // Booking details
@@ -901,7 +857,7 @@ class _DiscountsPaymentDialogState extends State<_DiscountsPaymentDialog> {
   Future<void> _pickCheckIn() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _checkIn,
+      initialDate: _checkIn.isAfter(DateTime.now()) ? DateTime.now() : _checkIn,
       firstDate: DateTime(_checkIn.year - 5),
       lastDate: DateTime.now(), // cannot be future
     );
@@ -928,205 +884,219 @@ class _DiscountsPaymentDialogState extends State<_DiscountsPaymentDialog> {
     if (picked != null) setState(() => _paymentDate = picked);
   }
 
+  void _continue() {
+    if (_form.currentState?.validate() != true) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_checkOut.isAfter(today) || _paymentDate.isAfter(today)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Dates cannot be in the future.')));
+      return;
+    }
+    if (DateTime(_checkOut.year, _checkOut.month, _checkOut.day)
+        .isBefore(DateTime(_checkIn.year, _checkIn.month, _checkIn.day))) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Check-out cannot be before check-in.')));
+      return;
+    }
+    Navigator.pop(
+        context,
+        _FinaliseInput(
+            fnbDiscountPct: _fnbDisc,
+            otherDiscountPct: _otherDisc,
+            checkInDate: _checkIn,
+            checkOutDate: _checkOut,
+            paymentDate: _paymentDate,
+            payeeName: _payeeCtrl.text.trim(),
+            paymentType: _paymentType));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final df = DateFormat('d MMM yyyy');
-
-    final fnbAfter = widget.fnbTotal * (1 - (_fnbDisc.clamp(0, 100) / 100.0));
+    final fnbAfter = widget.fnbTotal * (1 - (_fnbDisc.clamp(0, 100) / 100));
     final otherAfter =
-        widget.otherTotal * (1 - (_otherDisc.clamp(0, 100) / 100.0));
-
-    return AlertDialog(
-      title: const ResponsiveText(
-        'Finalise Bill',
-        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-      ),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _form,
+        widget.otherTotal * (1 - (_otherDisc.clamp(0, 100) / 100));
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 28),
+      backgroundColor: Emville.ivory,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 390),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Discounts
-              const ResponsiveText(
-                'Discounts',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 16, color: emGreen),
-              ),
-              SizedBox(height: R.space(context, 8)),
-              _percentField(
-                label: 'F&B (%)',
-                value: _fnbDisc,
-                onChanged: (v) => setState(() => _fnbDisc = v),
-              ),
-              _percentField(
-                label: 'Other (%)',
-                value: _otherDisc,
-                onChanged: (v) => setState(() => _otherDisc = v),
-              ),
-              SizedBox(height: R.space(context, 16)),
-
-              // Payment
-              const ResponsiveText(
-                'Payment',
-                style: TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 16, color: emGreen),
-              ),
-              SizedBox(height: R.space(context, 8)),
-
-              _dateRow('Check in date', df.format(_checkIn), _pickCheckIn),
-              _dateRow('Check out date', df.format(_checkOut), _pickCheckOut),
-              _dateRow(
-                  'Payment date', df.format(_paymentDate), _pickPaymentDate),
-              SizedBox(height: R.space(context, 8)),
-
-              const ResponsiveText('Payee Name',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              TextFormField(
-                controller: _payeeCtrl,
-                decoration: _decoration(),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Required' : null,
-              ),
-              SizedBox(height: R.space(context, 8)),
-
-              const ResponsiveText('Payment type',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              DropdownButtonFormField<String>(
-                initialValue: _paymentType,
-                items: const [
-                  DropdownMenuItem(
-                      value: 'Bank Transfer',
-                      child: ResponsiveText('Bank Transfer',
-                          style: TextStyle(fontSize: 14))),
-                  DropdownMenuItem(
-                      value: 'Cash',
-                      child: ResponsiveText('Cash',
-                          style: TextStyle(fontSize: 14))),
-                  DropdownMenuItem(
-                      value: 'Card',
-                      child: ResponsiveText('Card',
-                          style: TextStyle(fontSize: 14))),
-                  DropdownMenuItem(
-                      value: 'UPI',
-                      child: ResponsiveText('UPI',
-                          style: TextStyle(fontSize: 14))),
-                ],
-                onChanged: (v) => setState(() => _paymentType = v ?? 'Cash'),
-                decoration: _decoration(),
-              ),
-
-              SizedBox(height: R.space(context, 16)),
-              // Quick summary line (after discounts)
-              ResponsiveText(
-                'After discounts — F&B: ${_m(fnbAfter, widget.currency)} | Other: ${_m(otherAfter, widget.currency)}',
-                style: const TextStyle(fontSize: 13, color: Colors.black54),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          child: const ResponsiveText('Cancel', style: TextStyle(fontSize: 14)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-              backgroundColor: emGold, foregroundColor: emGreen),
-          child: const ResponsiveText('OK',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-          onPressed: () {
-            if (_form.currentState?.validate() != true) return;
-            // Validate not in future
-            final today = DateTime.now();
-            final todayOnly = DateTime(today.year, today.month, today.day);
-            if (_checkOut.isAfter(todayOnly) ||
-                _paymentDate.isAfter(todayOnly)) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Dates cannot be in the future.')));
-              return;
-            }
-            Navigator.pop(
-              context,
-              _FinaliseInput(
-                fnbDiscountPct: _fnbDisc,
-                otherDiscountPct: _otherDisc,
-                checkInDate: _checkIn,
-                checkOutDate: _checkOut,
-                paymentDate: _paymentDate,
-                payeeName: _payeeCtrl.text.trim(),
-                paymentType: _paymentType,
-              ),
-            );
-          },
-        ),
-      ],
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Flexible(
+                    child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(22, 22, 22, 12),
+                        child: Form(
+                            key: _form,
+                            child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Row(children: [
+                                    Expanded(
+                                        child: Text('Finalise bill',
+                                            style: Emville.heading(28))),
+                                    IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => Navigator.pop(context),
+                                        tooltip: 'Close',
+                                        icon: const Icon(Icons.close, size: 18))
+                                  ]),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                      '${widget.guestName} · Review payment details',
+                                      style: const TextStyle(
+                                          fontSize: 10, color: Emville.muted)),
+                                  const SizedBox(height: 22),
+                                  Text('Discounts', style: Emville.heading(21)),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                            child: _percentField(
+                                                'F&B (%)',
+                                                _fnbDisc,
+                                                (v) => setState(
+                                                    () => _fnbDisc = v))),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                            child: _percentField(
+                                                'Other (%)',
+                                                _otherDisc,
+                                                (v) => setState(
+                                                    () => _otherDisc = v)))
+                                      ]),
+                                  const SizedBox(height: 13),
+                                  Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                          color: Emville.sage,
+                                          borderRadius:
+                                              BorderRadius.circular(10)),
+                                      child: Wrap(
+                                          alignment: WrapAlignment.spaceBetween,
+                                          spacing: 10,
+                                          runSpacing: 5,
+                                          children: [
+                                            const Text('After discounts',
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: Emville.muted)),
+                                            Text(
+                                                'F&B ${bookingMoney(fnbAfter, widget.currency)} · Other ${bookingMoney(otherAfter, widget.currency)}',
+                                                style: const TextStyle(
+                                                    fontSize: 10))
+                                          ])),
+                                  const SizedBox(height: 22),
+                                  Text('Payment', style: Emville.heading(21)),
+                                  const SizedBox(height: 13),
+                                  _dateRow(
+                                      'Check-in date', _checkIn, _pickCheckIn),
+                                  _dateRow('Check-out date', _checkOut,
+                                      _pickCheckOut),
+                                  _dateRow('Payment date', _paymentDate,
+                                      _pickPaymentDate),
+                                  bookingLabel('Payee name'),
+                                  TextFormField(
+                                      key: const ValueKey('finalise-payee'),
+                                      controller: _payeeCtrl,
+                                      style: const TextStyle(fontSize: 12),
+                                      decoration: bookingDecoration(
+                                          hint: 'Enter payee name'),
+                                      validator: (v) =>
+                                          v?.trim().isNotEmpty == true
+                                              ? null
+                                              : 'Required'),
+                                  const SizedBox(height: 12),
+                                  bookingLabel('Payment type'),
+                                  DropdownButtonFormField<String>(
+                                      key: const ValueKey(
+                                          'finalise-payment-type'),
+                                      initialValue: _paymentType,
+                                      isExpanded: true,
+                                      style: const TextStyle(
+                                          fontFamily: 'Roboto',
+                                          fontSize: 12,
+                                          color: Emville.ink),
+                                      decoration: bookingDecoration(),
+                                      items: [
+                                        for (final mode in [
+                                          'Cash',
+                                          'UPI',
+                                          'Card',
+                                          'Bank Transfer'
+                                        ])
+                                          DropdownMenuItem(
+                                              value: mode, child: Text(mode))
+                                      ],
+                                      onChanged: (v) => setState(
+                                          () => _paymentType = v ?? 'Cash')),
+                                  const SizedBox(height: 19),
+                                  const Text(
+                                      'Continue to review the final bill before saving.',
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          height: 1.5,
+                                          color: Emville.muted)),
+                                ])))),
+                Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 0, 22, 22),
+                    child: Row(children: [
+                      Expanded(
+                          child: OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Cancel'))),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: FilledButton(
+                              onPressed: _continue,
+                              child: const Text('Continue')))
+                    ])),
+              ])),
     );
   }
 
   Widget _percentField(
-      {required String label,
-      required double value,
-      required ValueChanged<double> onChanged}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ResponsiveText(label,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          String label, double value, ValueChanged<double> onChanged) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        bookingLabel(label),
         TextFormField(
-          initialValue: value.toStringAsFixed(0),
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: _decoration(hint: '0 - 100'),
-          onChanged: (t) {
-            final v = double.tryParse(t) ?? 0;
-            onChanged(v.clamp(0, 100));
-          },
-        ),
-        SizedBox(height: R.space(context, 8)),
-      ],
-    );
-  }
-
-  Widget _dateRow(String label, String value, VoidCallback onTap) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: R.space(context, 8)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ResponsiveText(label,
-              style:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          TextButton.icon(
-            icon: const Icon(Icons.calendar_today, color: emGreen, size: 16),
-            label: ResponsiveText(value,
-                style: const TextStyle(fontSize: 14, color: emGreen)),
-            onPressed: onTap,
-          ),
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _decoration({String? hint}) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: EdgeInsets.symmetric(
-          horizontal: R.space(context, 12), vertical: R.space(context, 10)),
-      border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(R.tokens(context).radius)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(R.tokens(context).radius),
-        borderSide: const BorderSide(color: Color(0x22000000)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(R.tokens(context).radius),
-        borderSide: const BorderSide(color: emGreen, width: 1.2),
-      ),
-    );
-  }
+            key: ValueKey(label),
+            initialValue: value.toStringAsFixed(0),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 12),
+            decoration: bookingDecoration(hint: '0–100'),
+            validator: (s) {
+              final n = double.tryParse(s ?? '');
+              return n == null || !n.isFinite || n < 0 || n > 100
+                  ? 'Use 0–100'
+                  : null;
+            },
+            onChanged: (s) {
+              final n = double.tryParse(s);
+              if (n != null && n.isFinite) onChanged(n.clamp(0, 100));
+            })
+      ]);
+  Widget _dateRow(String label, DateTime value, VoidCallback onTap) => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        bookingLabel(label),
+        InkWell(
+            onTap: onTap,
+            child: InputDecorator(
+                decoration: bookingDecoration(),
+                child: Row(children: [
+                  Expanded(
+                      child: Text(DateFormat('d MMM yyyy').format(value),
+                          style: const TextStyle(fontSize: 12))),
+                  const Icon(Icons.calendar_today_outlined, size: 16)
+                ])))
+      ]));
 }
 
 class _BillPreviewSheet extends StatelessWidget {
@@ -1224,7 +1194,7 @@ class _BillPreviewSheet extends StatelessWidget {
             Expanded(
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: emGreen,
+                  foregroundColor: Emville.paper,
                   side: const BorderSide(color: emGreen),
                   padding: EdgeInsets.symmetric(
                       vertical: ResponsiveSize.of(context).h(14)),
@@ -1240,8 +1210,8 @@ class _BillPreviewSheet extends StatelessWidget {
             Expanded(
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: emGold,
-                  foregroundColor: emGreen,
+                  backgroundColor: Emville.forest,
+                  foregroundColor: Emville.paper,
                   padding: EdgeInsets.symmetric(
                       vertical: ResponsiveSize.of(context).h(14)),
                 ),
@@ -1260,8 +1230,8 @@ class _BillPreviewSheet extends StatelessWidget {
           width: double.infinity,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: emGold,
-              foregroundColor: emGreen,
+              backgroundColor: Emville.forest,
+              foregroundColor: Emville.paper,
               padding: EdgeInsets.symmetric(
                   vertical: ResponsiveSize.of(context).h(14)),
             ),
@@ -1340,65 +1310,22 @@ class _ExtraItem {
 }
 
 class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.title, required this.child});
   final String title;
   final Widget child;
-  const _SectionCard({required this.title, required this.child});
-
   @override
-  Widget build(BuildContext context) {
-    final tokens = R.tokens(context);
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0x11000000)),
-        borderRadius: BorderRadius.circular(tokens.radius),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.padding),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ResponsiveText(
-              title,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700, fontSize: 16, color: emGreen),
-            ),
-            SizedBox(height: R.space(context, 10)),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => BookingCard(children: [
+        Text(title, style: Emville.heading(22)),
+        const SizedBox(height: 13),
+        child
+      ]);
 }
 
 class _KeyVal extends StatelessWidget {
-  final String k;
-  final String v;
   const _KeyVal(this.k, this.v);
-
+  final String k, v;
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: R.space(context, 4)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ResponsiveText(k,
-              style:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          Flexible(
-            child: ResponsiveText(v,
-                style: const TextStyle(fontSize: 14),
-                textAlign: TextAlign.right,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => BookingValue(k, v);
 }
 
 class _ProofPickerDialog extends StatelessWidget {
@@ -1466,40 +1393,6 @@ DateTime? _parseDate(dynamic raw) {
 num _asNum(dynamic v) => (v is num) ? v : (num.tryParse('${v ?? ''}') ?? 0);
 
 // ---- Error block ----
-class _ErrorState extends StatelessWidget {
-  final Object? error;
-  final Future<void> Function() onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(R.space(context, 24)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline,
-                size: R.icon(context, 36), color: Colors.redAccent),
-            SizedBox(height: R.space(context, 12)),
-            ResponsiveText('Something went wrong.\n${error ?? ''}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14)),
-            SizedBox(height: R.space(context, 16)),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: emGold, foregroundColor: emGreen),
-              onPressed: onRetry,
-              child: const ResponsiveText('Retry',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // Put this in a shared place or top of the two files that need it.
 
 // ---- Tables / buckets (reuse your constants if already defined) ----

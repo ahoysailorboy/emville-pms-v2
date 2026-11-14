@@ -49,7 +49,10 @@ void main() {
 
     Future<void> show(Widget home) async {
       await tester.pumpWidget(MaterialApp(
-          debugShowCheckedModeBanner: false, theme: Emville.theme, home: home));
+          key: UniqueKey(),
+          debugShowCheckedModeBanner: false,
+          theme: Emville.theme,
+          home: home));
     }
 
     await show(const StartupScreen());

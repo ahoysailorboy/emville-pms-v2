@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Existing background color -->
-    <color name="ic_launcher_background">#0B3D2E</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
 
     <!-- Add this color for notifications -->
     <color name="notification_accent">#D9A633</color>
