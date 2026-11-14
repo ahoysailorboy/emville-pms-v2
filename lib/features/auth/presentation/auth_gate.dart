@@ -9,7 +9,8 @@ import 'waiting_for_approval_screen.dart';
 import 'package:emville_pms/services/oauth_bridge.dart';
 
 // 👇 responsive barrel
-import 'package:emville_pms/responsive/responsive.dart';
+import 'package:emville_pms/ui/emville_theme.dart';
+import 'package:emville_pms/ui/startup_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -84,9 +85,7 @@ class _AuthGateState extends State<AuthGate> {
             future: _fetchGateStatus(uid),
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
+                return const StartupScreen();
               }
 
               // Prefer role from DB; fall back to what bootstrap discovered
@@ -132,9 +131,7 @@ class _AuthGateState extends State<AuthGate> {
         // Not signed in yet
         if (snapshot.connectionState == ConnectionState.waiting &&
             session == null) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const StartupScreen();
         }
 
         if (session == null) {
@@ -161,8 +158,6 @@ class _SignInPage extends StatefulWidget {
 
 class _SignInPageState extends State<_SignInPage> {
   // Emville brand
-  static const Color _green = Color(0xFF103329);
-  static const Color _gold = Color(0xFFD9A633);
 
   final supabase = Supabase.instance.client;
   final emailCtrl = TextEditingController();
@@ -250,203 +245,258 @@ class _SignInPageState extends State<_SignInPage> {
     }
   }
 
-  InputDecoration _fieldDeco(String label, {IconData? icon}) {
-    final rs = ResponsiveSize(context);
-    final tokens = ResponsiveTokens.of(context);
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(fontSize: rs.font(14)),
-      prefixIcon:
-          icon != null ? Icon(icon, color: _green, size: rs.icon(20)) : null,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(tokens.radius),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: _green, width: 1.8),
-        borderRadius: BorderRadius.circular(tokens.radius),
-      ),
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: rs.w(14),
-        vertical: rs.h(12),
-      ),
-    );
-  }
-
-  Widget _orDivider() {
-    final rs = ResponsiveSize(context);
-    return Row(
-      children: [
-        Expanded(child: Divider(color: _green.withValues(alpha: 0.2))),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: rs.w(8)),
-          child: Text(
-            'OR',
-            style: TextStyle(
-              color: _green.withValues(alpha: 0.7),
-              fontSize: rs.font(12),
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: _green.withValues(alpha: 0.2))),
-      ],
-    );
-  }
-
+  bool _hidePassword = true;
+  void _passwordHelp() => showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+              title: const Text('Forgot password?'),
+              content: const Text(
+                  'Please contact your property administrator to help restore access to your account.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Got it'))
+              ]));
+  Widget _label(String text) => Padding(
+      padding: const EdgeInsets.only(top: 21, bottom: 8),
+      child: Text(text,
+          style: const TextStyle(
+              fontFamily: 'Roboto',
+              fontSize: 11,
+              fontWeight: FontWeight.w600)));
   @override
   Widget build(BuildContext context) {
-    final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
-    final rs = ResponsiveSize(context);
-    final tokens = ResponsiveTokens.of(context);
-
+    final locked = busy || socialBusy;
     return Scaffold(
-      appBar: AppBar(
-        title: ResponsiveText(
-          'Emville PMS',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: _gold,
-            fontSize: rs.font(18),
-          ),
-        ),
-        backgroundColor: _green,
-        iconTheme: IconThemeData(color: _gold, size: rs.icon(22)),
-      ),
-      body: SafeArea(
-        minimum: EdgeInsets.all(rs.w(24)),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: ResponsiveSize.panelMaxWidth(context),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Spacer(),
-                ResponsiveText(
-                  'Sign in',
-                  style: TextStyle(
-                    fontSize: rs.font(28),
-                    fontWeight: FontWeight.w900,
-                    color: _green,
-                  ),
-                ),
-                SizedBox(height: rs.space(16)),
-                TextField(
-                  controller: emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: _fieldDeco('Email', icon: Icons.email_outlined),
-                ),
-                SizedBox(height: rs.space(10)),
-                TextField(
-                  controller: passCtrl,
-                  obscureText: true,
-                  decoration: _fieldDeco('Password', icon: Icons.lock_outline),
-                ),
-                SizedBox(height: rs.space(16)),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _green,
-                    foregroundColor: _gold,
-                    padding: EdgeInsets.symmetric(vertical: rs.h(14)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radius),
-                    ),
-                    textStyle: TextStyle(
-                      fontSize: rs.font(14),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  onPressed: busy ? null : _signin,
-                  icon: busy
-                      ? SizedBox(
-                          height: rs.icon(18),
-                          width: rs.icon(18),
-                          child: const CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(_gold),
-                          ),
-                        )
-                      : Icon(Icons.login, size: rs.icon(20)),
-                  label: const Text('Continue'),
-                ),
-                SizedBox(height: rs.space(16)),
-                _orDivider(),
-                SizedBox(height: rs.space(16)),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _green,
-                    side: const BorderSide(color: _green),
-                    padding: EdgeInsets.symmetric(vertical: rs.h(12)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radius),
-                    ),
-                    textStyle: TextStyle(fontSize: rs.font(14)),
-                  ),
-                  onPressed: socialBusy ? null : _signinWithGoogle,
-                  icon: socialBusy
-                      ? SizedBox(
-                          height: rs.icon(18),
-                          width: rs.icon(18),
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(Icons.g_mobiledata, size: rs.icon(22)),
-                  label: const Text('Continue with Google'),
-                ),
-                SizedBox(height: rs.space(8)),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _green,
-                    side: const BorderSide(color: _green),
-                    padding: EdgeInsets.symmetric(vertical: rs.h(12)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radius),
-                    ),
-                    textStyle: TextStyle(fontSize: rs.font(14)),
-                  ),
-                  onPressed: socialBusy ? null : _signinWithApple,
-                  icon: socialBusy
-                      ? SizedBox(
-                          height: rs.icon(18),
-                          width: rs.icon(18),
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(isIOS ? Icons.apple : Icons.apple_outlined,
-                          size: rs.icon(20)),
-                  label: const Text('Continue with Apple'),
-                ),
-                SizedBox(height: rs.space(12)),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _green,
-                    side: const BorderSide(color: _green),
-                    padding: EdgeInsets.symmetric(vertical: rs.h(12)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(tokens.radius),
-                    ),
-                    textStyle: TextStyle(fontSize: rs.font(14)),
-                  ),
-                  onPressed: _goToSignup,
-                  icon: Icon(Icons.person_add_alt_1, size: rs.icon(20)),
-                  label: const Text('Create account'),
-                ),
-                const Spacer(),
-                Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Text(
-                    '© Emville',
-                    style: TextStyle(
-                      color: Colors.black54,
-                      fontSize: rs.font(12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+        body: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Stack(children: [
+                      SizedBox(
+                          height: 292,
+                          child: Stack(fit: StackFit.expand, children: [
+                            Image.asset(Emville.bedroom, fit: BoxFit.cover),
+                            const DecoratedBox(
+                                decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                  Colors.transparent,
+                                  Color(0x70123D32)
+                                ]))),
+                            Positioned(
+                                top: MediaQuery.paddingOf(context).top + 6,
+                                left: 20,
+                                child: Container(
+                                    width: 138,
+                                    color: Emville.ivory.withValues(alpha: .93),
+                                    padding: const EdgeInsets.all(6),
+                                    child: Image.asset(Emville.logo)))
+                          ])),
+                      Padding(
+                          padding: const EdgeInsets.only(top: 267),
+                          child: Container(
+                              padding:
+                                  const EdgeInsets.fromLTRB(27, 30, 27, 22),
+                              decoration: const BoxDecoration(
+                                  color: Emville.ivory,
+                                  borderRadius: BorderRadius.vertical(
+                                      top: Radius.circular(28))),
+                              child: AutofillGroup(
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                    const Text('YOUR PROPERTY, CONNECTED',
+                                        style: TextStyle(
+                                            fontFamily: 'Roboto',
+                                            fontSize: 10,
+                                            letterSpacing: 2)),
+                                    const SizedBox(height: 9),
+                                    Text('Welcome back.',
+                                        style: Emville.heading(31)),
+                                    const SizedBox(height: 9),
+                                    const Text(
+                                        'Sign in to take care of the day ahead.',
+                                        style: TextStyle(
+                                            fontFamily: 'Roboto',
+                                            fontSize: 12,
+                                            color: Emville.muted,
+                                            height: 1.6)),
+                                    _label('Email address'),
+                                    SizedBox(
+                                        height: 46,
+                                        child: TextField(
+                                            controller: emailCtrl,
+                                            enabled: !locked,
+                                            keyboardType:
+                                                TextInputType.emailAddress,
+                                            textInputAction:
+                                                TextInputAction.next,
+                                            autofillHints: const [
+                                              AutofillHints.username
+                                            ],
+                                            style: const TextStyle(
+                                                fontFamily: 'Roboto',
+                                                fontSize: 13),
+                                            decoration: const InputDecoration(
+                                                hintText: 'you@example.com',
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                        horizontal: 15,
+                                                        vertical: 13)))),
+                                    _label('Password'),
+                                    SizedBox(
+                                        height: 46,
+                                        child: TextField(
+                                            controller: passCtrl,
+                                            enabled: !locked,
+                                            obscureText: _hidePassword,
+                                            autofillHints: const [
+                                              AutofillHints.password
+                                            ],
+                                            style: const TextStyle(
+                                                fontFamily: 'Roboto',
+                                                fontSize: 13),
+                                            onSubmitted: (_) {
+                                              if (!locked) _signin();
+                                            },
+                                            decoration: InputDecoration(
+                                                hintText: 'Enter your password',
+                                                contentPadding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 15,
+                                                        vertical: 13),
+                                                suffixIcon: IconButton(
+                                                    tooltip: _hidePassword
+                                                        ? 'Show password'
+                                                        : 'Hide password',
+                                                    icon: Icon(
+                                                        _hidePassword
+                                                            ? Icons
+                                                                .visibility_outlined
+                                                            : Icons
+                                                                .visibility_off_outlined,
+                                                        size: 17,
+                                                        color: Emville.muted),
+                                                    onPressed: () => setState(
+                                                        () => _hidePassword =
+                                                            !_hidePassword))))),
+                                    Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton(
+                                            style: TextButton.styleFrom(
+                                                minimumSize: const Size(44, 34),
+                                                padding: EdgeInsets.zero,
+                                                textStyle: const TextStyle(
+                                                    fontFamily: 'Roboto',
+                                                    fontSize: 11)),
+                                            onPressed: _passwordHelp,
+                                            child: const Text(
+                                                'Forgot password?'))),
+                                    const SizedBox(height: 8),
+                                    FilledButton(
+                                        onPressed: locked ? null : _signin,
+                                        child: busy
+                                            ? const SizedBox(
+                                                height: 18,
+                                                width: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Emville.paper))
+                                            : const Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                    Text('Sign in'),
+                                                    SizedBox(width: 8),
+                                                    Icon(Icons.arrow_forward,
+                                                        size: 16)
+                                                  ])),
+                                    const SizedBox(height: 22),
+                                    const Row(children: [
+                                      Expanded(child: Divider()),
+                                      Padding(
+                                          padding: EdgeInsets.symmetric(
+                                              horizontal: 14),
+                                          child: Text('or continue with',
+                                              style: TextStyle(
+                                                  fontFamily: 'Roboto',
+                                                  fontSize: 10,
+                                                  color: Emville.muted))),
+                                      Expanded(child: Divider())
+                                    ]),
+                                    const SizedBox(height: 22),
+                                    Row(children: [
+                                      Expanded(
+                                          child: OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                  minimumSize:
+                                                      const Size(44, 43)),
+                                              onPressed: locked
+                                                  ? null
+                                                  : _signinWithGoogle,
+                                              icon: const Icon(
+                                                  Icons.g_mobiledata,
+                                                  size: 20),
+                                              label: const Text('Google',
+                                                  style: TextStyle(
+                                                      fontFamily: 'Roboto',
+                                                      fontSize: 12)))),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                          child: OutlinedButton.icon(
+                                              style: OutlinedButton.styleFrom(
+                                                  minimumSize:
+                                                      const Size(44, 43)),
+                                              onPressed: locked
+                                                  ? null
+                                                  : _signinWithApple,
+                                              icon: const Icon(Icons.apple,
+                                                  size: 17),
+                                              label: const Text('Apple',
+                                                  style: TextStyle(
+                                                      fontFamily: 'Roboto',
+                                                      fontSize: 12))))
+                                    ]),
+                                    if (socialBusy)
+                                      const Padding(
+                                          padding: EdgeInsets.all(10),
+                                          child: Center(
+                                              child: SizedBox(
+                                                  width: 18,
+                                                  height: 18,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2)))),
+                                    const SizedBox(height: 14),
+                                    Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Text('New to Emville? ',
+                                              style: TextStyle(
+                                                  fontFamily: 'Roboto',
+                                                  fontSize: 11,
+                                                  color: Emville.muted)),
+                                          TextButton(
+                                              style: TextButton.styleFrom(
+                                                  padding: EdgeInsets.zero,
+                                                  textStyle: const TextStyle(
+                                                      fontFamily: 'Roboto',
+                                                      fontSize: 11)),
+                                              onPressed:
+                                                  locked ? null : _goToSignup,
+                                              child: const Text(
+                                                  'Create an account'))
+                                        ]),
+                                  ])))),
+                    ])))));
   }
 }

@@ -1,3 +1,4 @@
+import '../data/finance_access.dart';
 // lib/features/accounts/presentation/main_salary_form_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -158,6 +159,7 @@ class _MainSalaryFormPageState extends State<MainSalaryFormPage> {
   }
 
   Future<double?> _currentLedgerBalance() async {
+    if (!await FinanceAccess.isOwnerOrAdmin(_sb)) return null;
     try {
       final rows = await supabaseCall(() async {
         return await _sb

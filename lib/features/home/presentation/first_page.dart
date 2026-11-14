@@ -1,322 +1,236 @@
-// lib/features/home/presentation/first_page.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:emville_pms/ui/emville_theme.dart';
+import 'package:emville_pms/ui/emville_widgets.dart';
 import 'package:emville_pms/features/pms/upcoming_tasks_page.dart';
 import 'package:emville_pms/features/pms/pending_tasks_page.dart';
 import 'package:emville_pms/features/pms/postponed_tasks_page.dart';
-import 'package:emville_pms/supabase_call.dart';
-// ✅ Responsive barrel
-import 'package:emville_pms/responsive/responsive.dart';
+import 'package:emville_pms/features/pms/work_planning_page.dart';
+import 'package:emville_pms/features/pms/add_pms_task.dart';
 
 class FirstPage extends StatefulWidget {
   const FirstPage({super.key, this.role});
-  final String? role; // "owner", "admin", "caretaker" etc.
-
+  final String? role;
   @override
   State<FirstPage> createState() => _FirstPageState();
 }
 
 class _FirstPageState extends State<FirstPage> {
-  // Emville brand
-  static const Color _green = Color(0xFF103329);
-  static const Color _gold = Color(0xFFD9A633);
-
-  final _sb = Supabase.instance.client;
-
-  String _fullName = 'User';
-  int _upcoming = 0; // next 7 days incl. today
-  int _pending = 0; // overdue (strictly before today), NOT postponed
-  int _postponed = 0; // postponed == 'yes'
-  bool _loading = true;
-
+  String _filter = 'All';
+  bool _month = false;
+  late Future<List<Map<String, dynamic>>> _work;
   @override
   void initState() {
     super.initState();
-    _loadUserAndCounts();
+    _work = _load();
   }
 
-  Future<void> _loadUserAndCounts() async {
-    setState(() => _loading = true);
+  Future<List<Map<String, dynamic>>> _load() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final end = _month
+        ? DateTime(today.year, today.month + 1, 0)
+        : today.add(Duration(days: 7 - today.weekday));
+    final rows = await Supabase.instance.client
+        .from('main_pms_db')
+        .select('id,task_name,job_description,next_due_date,task_interval')
+        .eq('postponed', 'no')
+        .lte('next_due_date', DateFormat('yyyy-MM-dd').format(end))
+        .order('next_due_date');
+    return List<Map<String, dynamic>>.from(rows);
+  }
 
-    // Resolve full name
-    String name = 'User';
-    final user = _sb.auth.currentUser;
-    if (user != null) {
-      try {
-        final row = await supabaseCall(() async {
-          return await _sb
-              .from('users')
-              .select('full_name')
-              .eq('uid', user.id)
-              .maybeSingle();
-        });
-        final n = row?['full_name'] as String?;
-        if (n != null && n.trim().isNotEmpty) {
-          name = n.trim();
-        } else {
-          final metaFull = user.userMetadata?['full_name'] as String?;
-          final metaName = user.userMetadata?['name'] as String?;
-          name =
-              (metaFull ?? metaName ?? user.email?.split('@').first ?? 'User')
-                  .toString()
-                  .trim();
-        }
-      } catch (_) {
-        final metaFull = user.userMetadata?['full_name'] as String?;
-        final metaName = user.userMetadata?['name'] as String?;
-        name = (metaFull ?? metaName ?? user.email?.split('@').first ?? 'User')
-            .toString()
-            .trim();
-      }
-    }
-
-    // Date boundaries (DATE columns)
-    final df = DateFormat('yyyy-MM-dd');
-    final today = DateTime.now();
-    final sevenDays = today.add(const Duration(days: 7));
-    final todayStr = df.format(DateTime(today.year, today.month, today.day));
-    final sevenStr = df.format(
-      DateTime(sevenDays.year, sevenDays.month, sevenDays.day),
-    );
-
+  Future<void> _refresh() async {
+    setState(() {
+      _work = _load();
+    });
     try {
-      // Upcoming: next_due_date BETWEEN today..today+7 (inclusive)
-      final upcomingRows = await supabaseCall(() async {
-        return await _sb
-            .from('main_pms_db')
-            .select('id')
-            .gte('next_due_date', todayStr)
-            .lte('next_due_date', sevenStr)
-            .eq('postponed', 'no');
-      });
-      final upcomingCount = (upcomingRows as List).length;
-
-      // Pending: overdue (next_due_date < today) AND postponed='no'
-      final pendingRows = await supabaseCall(() async {
-        return await _sb
-            .from('main_pms_db')
-            .select('id')
-            .lt('next_due_date', todayStr)
-            .eq('postponed', 'no');
-      });
-      final pendingCount = (pendingRows as List).length;
-
-      // Postponed: postponed='yes'
-      final postponedRows = await supabaseCall(() async {
-        return await _sb
-            .from('main_pms_db')
-            .select('id')
-            .eq('postponed', 'yes');
-      });
-      final postponedCount = (postponedRows as List).length;
-
-      if (!mounted) return;
-      setState(() {
-        _fullName = name;
-        _upcoming = upcomingCount;
-        _pending = pendingCount;
-        _postponed = postponedCount;
-        _loading = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-    }
+      await _work;
+    } catch (_) {}
   }
 
-  // Re-usable tile (matches AccountsHubPage style)
-  Widget _tile({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    VoidCallback? onTap,
-  }) {
-    final rs = ResponsiveSize.of(context);
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(rs.radius(16)),
-      ),
-      elevation: 3,
-      margin: EdgeInsets.symmetric(vertical: rs.space(8)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(rs.radius(16)),
-        onTap: onTap ??
-            () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Coming soon')),
-              );
-            },
-        child: Padding(
-          padding: EdgeInsets.all(rs.space(16)),
-          child: Row(
-            children: [
-              Container(
-                height: rs.icon(46),
-                width: rs.icon(46),
-                decoration: BoxDecoration(
-                  color: _green,
-                  borderRadius: BorderRadius.circular(rs.radius(12)),
-                ),
-                child: Icon(icon, color: _gold, size: rs.icon(24)),
-              ),
-              SizedBox(width: rs.space(16)),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: rs.font(16),
-                        fontWeight: FontWeight.bold,
-                        color: _green,
-                      ),
-                    ),
-                    SizedBox(height: rs.space(4)),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: rs.font(13),
-                        color: _green.withValues(alpha: 0.75),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: _green, size: rs.icon(22)),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (mounted) await _refresh();
   }
 
-  String get _roleLabel {
-    final r = widget.role ?? '';
-    if (r == 'owner') return 'Owner';
-    if (r == 'admin') return 'Admin';
-    return 'User';
+  bool _overdue(Map<String, dynamic> row) {
+    final due = DateTime.tryParse(row['next_due_date']?.toString() ?? '');
+    final now = DateTime.now();
+    return due != null && due.isBefore(DateTime(now.year, now.month, now.day));
   }
 
   @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    const emvilleGreen = _green;
-    const emvilleGold = _gold;
-
-    return _loading
-        ? const Center(child: CircularProgressIndicator())
-        : LayoutBuilder(
-            builder: (context, constraints) {
-              // Top welcome row (left: welcome+name constrained to 3/4 width)
-              final maxWelcomeWidth = constraints.maxWidth * 0.75;
-
-              return ListView(
-                padding: EdgeInsets.all(rs.space(16)),
-                children: [
-                  // Greeting row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxWelcomeWidth),
-                        child: RichText(
-                          text: TextSpan(
-                            style: TextStyle(
-                              fontSize: rs.font(20),
-                              color: emvilleGreen,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            children: [
-                              const TextSpan(text: 'Welcome '),
-                              TextSpan(
-                                text: _fullName,
+  Widget build(BuildContext context) => EmvilleBody(
+      child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 22),
+              children: [
+                const EmvilleHeading('Planned maintenance',
+                    eyebrow: 'Care for the property',
+                    subtitle: 'Keep every stay running beautifully.'),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _work,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return EmvilleError(onRetry: _refresh);
+                      }
+                      final all = snapshot.data ?? [];
+                      final overdue = all.where(_overdue).length;
+                      final filtered = all
+                          .where((r) =>
+                              _filter == 'All' ||
+                              _filter == 'Overdue' && _overdue(r) ||
+                              _filter == 'Upcoming' && !_overdue(r))
+                          .toList();
+                      return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 18),
+                            EmvilleCallout(
+                                leading: Text(
+                                    snapshot.hasData ? '$overdue' : '—',
+                                    style: Emville.heading(18)),
+                                trailing:
+                                    const EmvilleTag('Overdue', overdue: true),
+                                onTap: () => _open(const PendingTasksPage()),
+                                child:
+                                    const Text('Overdue tasks need attention')),
+                            const SizedBox(height: 18),
+                            DropdownButtonFormField<bool>(
+                                initialValue: _month,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                    contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    isDense: true),
                                 style: const TextStyle(
-                                  color: emvilleGreen,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: rs.space(10),
-                          vertical: rs.space(6),
-                        ),
-                        decoration: BoxDecoration(
-                          color: emvilleGreen,
-                          borderRadius: BorderRadius.circular(rs.radius(12)),
-                        ),
-                        child: Text(
-                          _roleLabel,
-                          style: TextStyle(
-                            color: emvilleGold,
-                            fontWeight: FontWeight.bold,
-                            fontSize: rs.font(12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  SizedBox(height: rs.space(16)),
-
-                  // Tiles
-                  _tile(
-                    icon: Icons.upcoming,
-                    title: 'Upcoming Tasks',
-                    subtitle:
-                        '$_upcoming job${_upcoming == 1 ? '' : 's'} due in next 7 days',
-                    onTap: () {
-                      Navigator.of(context)
-                          .push(
-                            MaterialPageRoute(
-                              builder: (_) => const UpcomingTasksPage(),
-                            ),
-                          )
-                          .then(
-                              (_) => _loadUserAndCounts()); // refresh on return
-                    },
-                  ),
-                  _tile(
-                    icon: Icons.pending_actions_outlined,
-                    title: 'Pending Tasks',
-                    subtitle:
-                        '$_pending overdue job${_pending == 1 ? '' : 's'}',
-                    onTap: () {
-                      Navigator.of(context)
-                          .push(
-                            MaterialPageRoute(
-                              builder: (_) => const PendingTasksPage(),
-                            ),
-                          )
-                          .then((_) => _loadUserAndCounts());
-                    },
-                  ),
-                  _tile(
-                    icon: Icons.schedule_outlined,
-                    title: 'Postponed Tasks',
-                    subtitle:
-                        '$_postponed postponed job${_postponed == 1 ? '' : 's'}',
-                    onTap: () {
-                      Navigator.of(context)
-                          .push(
-                            MaterialPageRoute(
-                              builder: (_) => const PostponedTasksPage(),
-                            ),
-                          )
-                          .then((_) => _loadUserAndCounts());
-                    },
-                  ),
-                ],
-              );
-            },
-          );
+                                    fontFamily: 'Roboto',
+                                    fontSize: 11,
+                                    color: Emville.ink),
+                                items: [
+                                  const DropdownMenuItem(
+                                      value: false, child: Text('This week')),
+                                  DropdownMenuItem(
+                                      value: true,
+                                      child: Text(
+                                          'This month · ${DateFormat('MMMM').format(DateTime.now())}'))
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    _month = value;
+                                    _refresh();
+                                  }
+                                }),
+                            const SizedBox(height: 20),
+                            EmvilleTabs(
+                                labels: const ['All', 'Overdue', 'Upcoming'],
+                                selected: _filter,
+                                onSelected: (value) =>
+                                    setState(() => _filter = value)),
+                            EmvilleSectionTitle('Your work plan',
+                                trailing: Text('${filtered.length} tasks',
+                                    style: const TextStyle(
+                                        fontFamily: 'Roboto',
+                                        fontSize: 10,
+                                        color: Emville.muted))),
+                            if (!snapshot.hasData)
+                              const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(
+                                      child: CircularProgressIndicator())),
+                            if (snapshot.hasData && filtered.isEmpty)
+                              const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 25),
+                                  child: Text('No tasks due in this plan.',
+                                      style: TextStyle(
+                                          fontFamily: 'Roboto',
+                                          color: Emville.muted,
+                                          fontSize: 12))),
+                            for (final row in filtered) _task(row),
+                          ]);
+                    }),
+                const SizedBox(height: 20),
+                FilledButton(
+                    onPressed: () => _open(const AddPmsTaskPage()),
+                    child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add, size: 16),
+                          SizedBox(width: 8),
+                          Text('Schedule task')
+                        ])),
+                const SizedBox(height: 8),
+                Wrap(alignment: WrapAlignment.spaceBetween, children: [
+                  TextButton(
+                      onPressed: () => _open(const WorkPlanningPage()),
+                      child: const Text('Export work plan',
+                          style:
+                              TextStyle(fontFamily: 'Roboto', fontSize: 11))),
+                  TextButton(
+                      onPressed: () => _open(const PostponedTasksPage()),
+                      child: const Text('Postponed tasks',
+                          style: TextStyle(fontFamily: 'Roboto', fontSize: 11)))
+                ]),
+              ])));
+  Widget _task(Map<String, dynamic> row) {
+    final due = DateTime.tryParse(row['next_due_date']?.toString() ?? '');
+    final overdue = _overdue(row);
+    return InkWell(
+        onTap: () => _open(
+            overdue ? const PendingTasksPage() : const UpcomingTasksPage()),
+        child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 17),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Emville.line))),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                  width: 39,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                      color: Emville.sage,
+                      borderRadius: BorderRadius.circular(11)),
+                  child: Text(
+                      due == null
+                          ? '—'
+                          : DateFormat('d\nMMM').format(due).toUpperCase(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontFamily: 'Roboto', fontSize: 10, height: 1.5))),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(row['task_name']?.toString() ?? 'Maintenance task',
+                        style: const TextStyle(
+                            fontFamily: 'Roboto',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 5),
+                    Text(
+                        '${row['task_interval'] ?? 'Scheduled'} · Due ${due == null ? '—' : DateFormat('d MMM').format(due)}',
+                        style: const TextStyle(
+                            fontFamily: 'Roboto',
+                            fontSize: 10,
+                            color: Emville.muted,
+                            height: 1.5)),
+                    const SizedBox(height: 7),
+                    EmvilleTag(overdue ? 'Overdue' : 'Upcoming',
+                        overdue: overdue)
+                  ])),
+              IconButton(
+                  tooltip: 'Open task workflow',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _open(overdue
+                      ? const PendingTasksPage()
+                      : const UpcomingTasksPage()),
+                  icon: const Icon(Icons.radio_button_unchecked,
+                      size: 18, color: Emville.muted)),
+            ])));
   }
 }

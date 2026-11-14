@@ -1,472 +1,544 @@
-// lib/pages/existing_booking.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'booking_details.dart';
-import 'bookings_advanced_search.dart';
-// Responsive system
-import 'package:emville_pms/responsive/responsive.dart';
-//import 'package:your_app/responsive/responsive_text.dart';
-//import 'package:your_app/responsive/responsive_extensions.dart';
-//import 'package:your_app/responsive/responsive_size.dart';
-
-// ---------- Config: adjust to match your schema ----------
-const kBookingsTable = 'booking_details';
-const kIdCol = 'id';
-const kGuestNameCol = 'guest_name';
-// Change to your date field if different (e.g., 'booking_date' or 'start_date')
-const kBookingDateColumn = 'check_in';
-
-// ---------- Emville color fallbacks (used if theme isn’t wired) ----------
-const _emGreen = Color(0xFF103329);
-const _emGold = Color(0xFFD9A633);
+import 'package:emville_pms/ui/emville_theme.dart';
+import 'package:emville_pms/ui/emville_widgets.dart';
+import 'booking_details.dart' show BookingDetailsPage;
+import 'booking_new.dart' show BookingNewPage;
+import 'data/booking_search.dart';
 
 class ExistingBookingPage extends StatefulWidget {
-  const ExistingBookingPage({super.key});
-
+  const ExistingBookingPage({super.key, this.embedded = false});
+  final bool embedded;
   @override
   State<ExistingBookingPage> createState() => _ExistingBookingPageState();
 }
 
 class _ExistingBookingPageState extends State<ExistingBookingPage> {
-  late Future<_BookingBuckets> _future;
-
+  final _search = TextEditingController();
+  late final BookingSearchRepository _repository;
+  late Future<List<BookingRecord>> _future;
+  BookingListTab _tab = BookingListTab.upcoming;
+  DateTime? _from, _to;
+  bool get _hasDates => _from != null || _to != null;
+  bool get _searching => _hasDates || _search.text.trim().isNotEmpty;
   @override
   void initState() {
     super.initState();
-    _future = _fetchBuckets();
+    _repository = BookingSearchRepository(Supabase.instance.client);
+    _future = _repository.load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
-    final next = _fetchBuckets();
-    setState(() => _future = next);
-    await next;
+    setState(() {
+      _future = _repository.load();
+    });
+    try {
+      await _future;
+    } catch (_) {}
   }
 
-  Future<_BookingBuckets> _fetchBuckets() async {
-    // Local day bounds → UTC ISO for timestamptz comparisons
-    final nowLocal = DateTime.now();
-    final todayLocal = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
-
-    final upcomingStart = todayLocal; // inclusive
-    final upcomingEnd = todayLocal.add(const Duration(days: 30)); // inclusive
-    final pastStart =
-        todayLocal.subtract(const Duration(days: 30)); // inclusive
-    final pastEnd = todayLocal.subtract(const Duration(days: 1)); // inclusive
-
-    final supa = Supabase.instance.client;
-
-    // Upcoming: [today .. today+30]
-    final upcomingResp = await supa
-        .from(kBookingsTable)
-        .select('*') // ⬅️ no generics here
-        .gte(kBookingDateColumn, upcomingStart.toUtc().toIso8601String())
-        .lte(kBookingDateColumn, upcomingEnd.toUtc().toIso8601String())
-        .order(kBookingDateColumn, ascending: true);
-
-    // Past: [today-30 .. yesterday]
-    final pastResp = await supa
-        .from(kBookingsTable)
-        .select('*') // ⬅️ no generics here
-        .gte(kBookingDateColumn, pastStart.toUtc().toIso8601String())
-        .lte(kBookingDateColumn, pastEnd.toUtc().toIso8601String())
-        .order(kBookingDateColumn, ascending: false);
-
-    // Supabase returns List<dynamic>; cast to Map<String, dynamic> for models
-    final upcoming = (upcomingResp as List)
-        .map((e) => _Booking.fromJson(e as Map<String, dynamic>))
-        .toList();
-
-    final past = (pastResp as List)
-        .map((e) => _Booking.fromJson(e as Map<String, dynamic>))
-        .toList();
-
-    return _BookingBuckets(upcoming: upcoming, past: past);
+  void _queryChanged(String value) => setState(
+      () => _tab = _searching ? BookingListTab.all : BookingListTab.upcoming);
+  String _date(DateTime? date) =>
+      date == null ? '—' : DateFormat('d MMM').format(date);
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    if (mounted) await _refresh();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final tokens = R.tokens(context);
-    final rs = ResponsiveSize.of(context);
+  Future<void> _filter() async {
+    final selected = await showModalBottomSheet<_Dates>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Emville.ivory,
+        builder: (sheetContext) {
+          DateTime? from = _from, to = _to;
+          return StatefulBuilder(builder: (context, update) {
+            Future<void> pick(bool start) async {
+              final first = start ? DateTime(1900) : from ?? DateTime(1900);
+              final current = (start ? from : to) ?? from ?? DateTime.now();
+              final initial = current.isBefore(first) ? first : current;
+              final date = await showDatePicker(
+                  context: context,
+                  initialDate: initial,
+                  firstDate: first,
+                  lastDate: DateTime(2100, 12, 31));
+              if (date == null || !context.mounted) return;
+              update(() {
+                if (start) {
+                  from = date;
+                  if (to != null && to!.isBefore(date)) to = date;
+                } else {
+                  to = date;
+                }
+              });
+            }
 
-    final scheme = Theme.of(context).colorScheme;
-    final emGreen = scheme.primary; // expect Emville green here
-    final emGold = scheme.secondary; // expect Emville gold here
-    // ignore: unused_local_variable
-    final green = emGreen.computeLuminance().isNaN ? _emGreen : emGreen;
-    final gold = emGold.computeLuminance().isNaN ? _emGold : emGold;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const ResponsiveText(
-          'Existing Bookings',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
-        ),
-        backgroundColor: _emGreen,
-        foregroundColor: _emGold,
-      ),
-      backgroundColor: const Color(0xFFF7F7F7),
-      body: SafeArea(
-        child: RefreshIndicator(
-          color: gold,
-          onRefresh: _refresh,
-          child: FutureBuilder<_BookingBuckets>(
-            future: _future,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snap.hasError) {
-                return _ErrorState(
-                  error: snap.error,
-                  onRetry: _refresh,
-                );
-              }
-              final buckets = snap.data ?? const _BookingBuckets.empty();
-
-              return Column(
-                children: [
-                  SizedBox(height: R.space(context, 8)),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: tokens.padding),
-                    child: _SectionHeader(
-                      title: 'Upcoming bookings',
-                      color: _emGreen,
-                    ),
-                  ),
-                  Expanded(
+            return SafeArea(
+                child: SingleChildScrollView(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: tokens.padding,
-                        vertical: R.space(context, 8),
-                      ),
-                      child: _DecoratedSection(
-                        radius: tokens.radius,
-                        child: _BookingList(
-                          items: buckets.upcoming,
-                          emptyText:
-                              'No upcoming bookings in the next 30 days.',
-                          onTap: (b) => _openDetails(b.id),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: tokens.padding),
-                    child: _SectionHeader(
-                      title: 'Past bookings',
-                      color: _emGreen,
-                    ),
-                  ),
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: tokens.padding,
-                        vertical: R.space(context, 8),
-                      ),
-                      child: _DecoratedSection(
-                        radius: tokens.radius,
-                        child: _BookingList(
-                          items: buckets.past,
-                          emptyText: 'No past bookings in the last 30 days.',
-                          onTap: (b) => _openDetails(b.id),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.padding,
-                      R.space(context, 8),
-                      tokens.padding,
-                      R.space(context, 16),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: ResponsiveSize.panelMaxWidth(context),
-                      ),
-                      child: SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _emGold,
-                            foregroundColor: _emGreen,
-                            padding: EdgeInsets.symmetric(
-                              vertical: rs.h(14),
-                              horizontal: rs.w(12),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(tokens.radius),
-                            ),
-                            elevation: 1,
-                          ),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      const BookingsAdvancedSearchPage()),
-                            ); // TODO: Wire up advanced search later
-                          },
-                          icon: Icon(Icons.search, size: R.icon(context, 20)),
-                          label: const ResponsiveText(
-                            'Advanced Search',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
+                        padding: EdgeInsets.fromLTRB(24, 8, 24,
+                            24 + MediaQuery.viewInsetsOf(context).bottom),
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text('Filter bookings',
+                                  style: Emville.heading(27)),
+                              const SizedBox(height: 9),
+                              const Text(
+                                  'Show every stay overlapping these dates. You can choose one or both dates.',
+                                  style: TextStyle(
+                                      fontFamily: 'Roboto',
+                                      fontSize: 12,
+                                      color: Emville.muted,
+                                      height: 1.6)),
+                              const SizedBox(height: 20),
+                              const Text('From date',
+                                  style: TextStyle(fontSize: 11)),
+                              const SizedBox(height: 7),
+                              OutlinedButton.icon(
+                                  key: const ValueKey('booking-filter-from'),
+                                  onPressed: () => pick(true),
+                                  icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 16),
+                                  label: Text(from == null
+                                      ? 'Choose from date'
+                                      : DateFormat('d MMM yyyy')
+                                          .format(from!))),
+                              const SizedBox(height: 16),
+                              const Text('To date',
+                                  style: TextStyle(fontSize: 11)),
+                              const SizedBox(height: 7),
+                              OutlinedButton.icon(
+                                  key: const ValueKey('booking-filter-to'),
+                                  onPressed: () => pick(false),
+                                  icon: const Icon(
+                                      Icons.calendar_today_outlined,
+                                      size: 16),
+                                  label: Text(to == null
+                                      ? 'Choose to date'
+                                      : DateFormat('d MMM yyyy').format(to!))),
+                              const SizedBox(height: 22),
+                              Row(children: [
+                                Expanded(
+                                    child: OutlinedButton(
+                                        onPressed: () =>
+                                            Navigator.of(sheetContext)
+                                                .pop(const _Dates(null, null)),
+                                        child: const Text('Reset'))),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                    child: FilledButton(
+                                        onPressed: () =>
+                                            Navigator.of(sheetContext)
+                                                .pop(_Dates(from, to)),
+                                        child: const Text('Apply filters')))
+                              ]),
+                            ]))));
+          });
+        });
+    if (selected == null || !mounted) return;
+    setState(() {
+      _from = selected.from;
+      _to = selected.to;
+      _tab = _searching ? BookingListTab.all : BookingListTab.upcoming;
+    });
   }
 
-  void _openDetails(String bookingId) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => BookingDetailsPage(bookingId: bookingId),
-      ),
-    );
-    // Later: replace with your real page
-    // Navigator.pushNamed(context, '/booking-details', arguments: bookingId);
-  }
-}
-
-// ---------- UI Bits ----------
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final Color color;
-  const _SectionHeader({required this.title, required this.color});
+  void _clearDates() => setState(() {
+        _from = null;
+        _to = null;
+        _tab = _searching ? BookingListTab.all : BookingListTab.upcoming;
+      });
 
   @override
   Widget build(BuildContext context) {
-    return ResponsiveText(
-      title,
-      style: TextStyle(
-        color: color,
-        fontWeight: FontWeight.w700,
-        fontSize: 18,
-      ),
-    );
+    final body = EmvilleBody(
+        child: Column(children: [
+      Expanded(
+          child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  children: [
+                    Container(
+                        decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(13),
+                            image: const DecorationImage(
+                                image: AssetImage(Emville.pool),
+                                fit: BoxFit.cover)),
+                        child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 19),
+                            decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(13),
+                                gradient: const LinearGradient(colors: [
+                                  Color(0xEB113D32),
+                                  Color(0x70113D32)
+                                ])),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('YOUR GUESTS AT EMVILLE',
+                                      style: TextStyle(
+                                          fontFamily: 'Roboto',
+                                          fontSize: 10,
+                                          letterSpacing: 2,
+                                          color: Colors.white)),
+                                  const SizedBox(height: 8),
+                                  Text('Bookings',
+                                      style: Emville.heading(27)
+                                          .copyWith(color: Colors.white)),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                      'Every reservation. A thoughtful welcome.',
+                                      style: TextStyle(
+                                          fontFamily: 'Roboto',
+                                          fontSize: 11,
+                                          color: Color(0xFFE5EADF),
+                                          height: 1.5)),
+                                ]))),
+                    FutureBuilder<List<BookingRecord>>(
+                        future: _future,
+                        builder: (context, snapshot) {
+                          final all = snapshot.data;
+                          final now = DateTime.now();
+                          return Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 15),
+                              child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _stat(
+                                        all == null
+                                            ? '—'
+                                            : '${all.where((b) => b.inTab(BookingListTab.upcoming, now)).length}',
+                                        'Upcoming stays'),
+                                    _stat(
+                                        all == null
+                                            ? '—'
+                                            : '${all.where((b) => b.status == 'enquiry').length}',
+                                        'Enquiries'),
+                                    _stat(
+                                        all == null
+                                            ? '—'
+                                            : '${all.where((b) => b.status == 'confirmed' && DateUtils.isSameDay(b.checkIn, now)).length}',
+                                        'Arrival today'),
+                                  ]));
+                        }),
+                    Row(children: [
+                      Expanded(
+                          child: SizedBox(
+                              height: 41,
+                              child: TextField(
+                                  key: const ValueKey('booking-keyword-search'),
+                                  controller: _search,
+                                  onChanged: _queryChanged,
+                                  style: const TextStyle(
+                                      fontFamily: 'Roboto', fontSize: 11),
+                                  decoration: InputDecoration(
+                                      hintText: 'Search any keyword',
+                                      prefixIcon:
+                                          const Icon(Icons.search, size: 17),
+                                      suffixIcon: _search.text.isEmpty
+                                          ? null
+                                          : IconButton(
+                                              tooltip: 'Clear search',
+                                              icon: const Icon(Icons.close,
+                                                  size: 15),
+                                              onPressed: () {
+                                                _search.clear();
+                                                _queryChanged('');
+                                              }),
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 11))))),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                          width: 41,
+                          height: 41,
+                          child: IconButton(
+                              tooltip: 'Filter bookings by date',
+                              key: const ValueKey('booking-date-filter'),
+                              style: IconButton.styleFrom(
+                                  backgroundColor:
+                                      _hasDates ? Emville.sage : Emville.paper,
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      side: BorderSide(
+                                          color: _hasDates
+                                              ? const Color(0xFFB4C0A9)
+                                              : Emville.line))),
+                              onPressed: _filter,
+                              icon: const Icon(Icons.tune, size: 19)))
+                    ]),
+                    if (_hasDates)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Row(children: [
+                            Expanded(
+                                child: Text(
+                                    '${_from == null ? 'Any start' : DateFormat('d MMM yyyy').format(_from!)} – ${_to == null ? 'Any end' : DateFormat('d MMM yyyy').format(_to!)}',
+                                    style: const TextStyle(
+                                        fontSize: 10, color: Emville.muted))),
+                            IconButton(
+                                tooltip: 'Clear date filter',
+                                onPressed: _clearDates,
+                                icon: const Icon(Icons.close, size: 15),
+                                visualDensity: VisualDensity.compact)
+                          ])),
+                    const SizedBox(height: 14),
+                    EmvilleTabs(
+                        labels: [
+                          if (_searching) 'All',
+                          'Upcoming',
+                          'Past',
+                          'Enquiries'
+                        ],
+                        selected: _label(_tab),
+                        onSelected: (label) => setState(() => _tab =
+                            BookingListTab.values
+                                .firstWhere((t) => _label(t) == label))),
+                    FutureBuilder<List<BookingRecord>>(
+                        future: _future,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return EmvilleError(
+                                onRetry: _refresh,
+                                message:
+                                    'Could not load bookings. Please try again.');
+                          }
+                          if (!snapshot.hasData) {
+                            return const Padding(
+                                padding: EdgeInsets.all(30),
+                                child:
+                                    Center(child: CircularProgressIndicator()));
+                          }
+                          final rows = snapshot.data!
+                              .where((b) =>
+                                  b.matchesKeyword(_search.text) &&
+                                  b.overlaps(from: _from, to: _to) &&
+                                  b.inTab(_tab, DateTime.now(),
+                                      limitToRecent: !_searching))
+                              .toList();
+                          if (_tab == BookingListTab.past) {
+                            rows.sort((a, b) => (b.checkOut ?? DateTime(1900))
+                                .compareTo(a.checkOut ?? DateTime(1900)));
+                          }
+                          final period = _hasDates
+                              ? 'Filtered period'
+                              : _tab == BookingListTab.all
+                                  ? 'All dates'
+                                  : _tab == BookingListTab.upcoming
+                                      ? 'Next 30 days'
+                                      : _tab == BookingListTab.past
+                                          ? 'Last 30 days'
+                                          : 'Awaiting confirmation';
+                          return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(3, 19, 3, 0),
+                                    child: Row(children: [
+                                      Expanded(
+                                          child: Text(
+                                              _tab == BookingListTab.all
+                                                  ? 'All bookings'
+                                                  : _tab ==
+                                                          BookingListTab
+                                                              .upcoming
+                                                      ? 'Upcoming stays'
+                                                      : _tab ==
+                                                              BookingListTab
+                                                                  .past
+                                                          ? 'Past stays'
+                                                          : 'Booking enquiries',
+                                              style: Emville.heading(19))),
+                                      const SizedBox(width: 8),
+                                      Text('$period · ${rows.length}',
+                                          style: const TextStyle(
+                                              fontFamily: 'Roboto',
+                                              fontSize: 10,
+                                              color: Emville.muted))
+                                    ])),
+                                if (rows.isEmpty)
+                                  const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 30),
+                                      child: Text(
+                                          'No bookings match your search.\nTry another keyword or date range.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                              fontFamily: 'Roboto',
+                                              fontSize: 11,
+                                              color: Emville.muted,
+                                              height: 1.7))),
+                                for (final booking in rows) _row(booking),
+                                const Padding(
+                                    padding: EdgeInsets.fromLTRB(3, 13, 3, 0),
+                                    child: Text(
+                                        'Select a stay to view guest details, payments and receipts.',
+                                        style: TextStyle(
+                                            fontFamily: 'Roboto',
+                                            fontSize: 9,
+                                            color: Emville.muted,
+                                            height: 1.6))),
+                              ]);
+                        }),
+                  ]))),
+      Padding(
+          padding: const EdgeInsets.fromLTRB(19, 8, 19, 10),
+          child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size(44, 43),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  onPressed: () => _open(const BookingNewPage()),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('New booking')))),
+    ]));
+    return widget.embedded ? body : EmvillePage(section: 1, child: body);
   }
-}
 
-class _DecoratedSection extends StatelessWidget {
-  final double radius;
-  final Widget child;
-  const _DecoratedSection({required this.radius, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 12,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: child,
-      ),
-    );
-  }
-}
-
-class _BookingList extends StatelessWidget {
-  final List<_Booking> items;
-  final String emptyText;
-  final void Function(_Booking) onTap;
-
-  const _BookingList({
-    required this.items,
-    required this.emptyText,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.all(R.space(context, 24)),
-          child: ResponsiveText(
-            emptyText,
+  String _label(BookingListTab tab) => switch (tab) {
+        BookingListTab.all => 'All',
+        BookingListTab.upcoming => 'Upcoming',
+        BookingListTab.past => 'Past',
+        BookingListTab.enquiries => 'Enquiries'
+      };
+  Widget _stat(String number, String label) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(number, style: Emville.heading(24)),
+        const SizedBox(height: 5),
+        Text(label,
             style: const TextStyle(
-              color: Colors.black54,
-              fontSize: 14,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
-    final tokens = R.tokens(context);
-
-    return ListView.separated(
-      padding: EdgeInsets.symmetric(vertical: R.space(context, 8)),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => SizedBox(height: R.space(context, 6)),
-      itemBuilder: (context, i) {
-        final b = items[i];
-        return Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.padding,
-            vertical: R.space(context, 4),
-          ),
-          child: Card(
-            elevation: 0,
-            color: const Color(0xFFFAFAFA),
-            shadowColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              side: const BorderSide(color: Color(0x11000000)),
-              borderRadius: BorderRadius.circular(tokens.radius),
-            ),
-            child: ListTile(
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: R.space(context, 16),
-                vertical: R.space(context, 10),
-              ),
-              leading: CircleAvatar(
-                radius: R.radius(context, 18),
-                backgroundColor: Theme.of(context)
-                    .colorScheme
-                    .primary
-                    .withValues(alpha: 0.08),
-                child: Icon(
-                  Icons.event,
-                  size: R.icon(context, 18),
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              title: ResponsiveText(
-                b.guestName ?? 'Booking',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  color: _emGreen, // will be overridden by Theme if you prefer
-                ),
-              ),
-              subtitle: ResponsiveText(
-                _formatDate(b.date),
-                style: const TextStyle(
-                  color: Colors.black54,
-                  fontSize: 13,
-                ),
-              ),
-              trailing: Icon(
-                Icons.chevron_right,
-                size: R.icon(context, 20),
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              onTap: () => onTap(b),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    final fmt = DateFormat('EEE, d MMM yyyy');
-    return fmt.format(date.toLocal());
+                fontFamily: 'Roboto', fontSize: 10, color: Emville.muted))
+      ]);
+  Widget _row(BookingRecord booking) {
+    final arrival = booking.status == 'confirmed' &&
+        DateUtils.isSameDay(booking.checkIn, DateTime.now());
+    final label = booking.status == 'enquiry'
+        ? 'Enquiry'
+        : booking.status == 'cancelled'
+            ? 'Cancelled'
+            : booking.inTab(BookingListTab.past, DateTime.now(),
+                    limitToRecent: false)
+                ? 'Completed'
+                : arrival
+                    ? 'Arrival today'
+                    : booking.status == 'confirmed'
+                        ? 'Confirmed'
+                        : booking.status;
+    return InkWell(
+        onTap: () => _open(BookingDetailsPage(bookingId: booking.id)),
+        child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 16),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Emville.line))),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                  width: 40,
+                  height: 45,
+                  decoration: BoxDecoration(
+                      color: Emville.sage,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                            booking.checkIn == null
+                                ? '—'
+                                : DateFormat('d').format(booking.checkIn!),
+                            style: Emville.heading(19)),
+                        const SizedBox(height: 3),
+                        Text(
+                            booking.checkIn == null
+                                ? ''
+                                : DateFormat('MMM')
+                                    .format(booking.checkIn!)
+                                    .toUpperCase(),
+                            style: const TextStyle(
+                                fontFamily: 'Roboto',
+                                fontSize: 8,
+                                letterSpacing: .8))
+                      ])),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Row(children: [
+                      Expanded(
+                          child: Text(booking.guest,
+                              style: const TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  height: 1.4))),
+                      const Icon(Icons.chevron_right,
+                          size: 15, color: Emville.muted)
+                    ]),
+                    const SizedBox(height: 5),
+                    Text(
+                        '${_date(booking.checkIn)}–${_date(booking.checkOut)} · ${booking.rooms} ${booking.rooms == '1' ? 'room' : 'rooms'} · ${booking.guests} guests',
+                        style: const TextStyle(
+                            fontFamily: 'Roboto',
+                            fontSize: 10,
+                            color: Emville.muted,
+                            height: 1.5)),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                              color: arrival
+                                  ? Emville.forest
+                                  : booking.status == 'enquiry'
+                                      ? const Color(0xFFF3E8D2)
+                                      : Emville.sage,
+                              borderRadius: BorderRadius.circular(6)),
+                          child: Text(label,
+                              style: TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 9,
+                                  color: arrival
+                                      ? Emville.paper
+                                      : booking.status == 'enquiry'
+                                          ? const Color(0xFF8A642E)
+                                          : Emville.forest))),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Text(booking.source,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                  fontFamily: 'Roboto',
+                                  fontSize: 9,
+                                  color: Emville.muted),
+                              overflow: TextOverflow.ellipsis))
+                    ])
+                  ])),
+            ])));
   }
 }
 
-// ---------- Data layer ----------
-
-class _Booking {
-  final String id;
-  final String? guestName;
-  final DateTime date;
-
-  _Booking({
-    required this.id,
-    required this.date,
-    this.guestName,
-  });
-
-  factory _Booking.fromJson(Map<String, dynamic> json) {
-    final id = json[kIdCol] as String;
-    final guest = json[kGuestNameCol] as String?;
-    final rawDate = json[kBookingDateColumn];
-
-    final date = rawDate is String
-        ? DateTime.parse(rawDate)
-        : (rawDate is DateTime ? rawDate : DateTime.now());
-
-    return _Booking(id: id, guestName: guest, date: date);
-  }
-}
-
-class _BookingBuckets {
-  final List<_Booking> upcoming;
-  final List<_Booking> past;
-
-  const _BookingBuckets({required this.upcoming, required this.past});
-  const _BookingBuckets.empty()
-      : upcoming = const [],
-        past = const [];
-}
-
-// ---------- Placeholder booking details page ----------
-
-// ---------- Error state ----------
-class _ErrorState extends StatelessWidget {
-  final Object? error;
-  final Future<void> Function() onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    final green = Theme.of(context).colorScheme.primary;
-    final gold = Theme.of(context).colorScheme.secondary;
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(R.space(context, 24)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline,
-                size: R.icon(context, 36), color: Colors.redAccent),
-            SizedBox(height: R.space(context, 12)),
-            ResponsiveText(
-              'Something went wrong.\n${error ?? ''}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14),
-            ),
-            SizedBox(height: R.space(context, 16)),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    gold == const Color(0x00000000) ? _emGold : gold,
-                foregroundColor:
-                    green == const Color(0x00000000) ? _emGreen : green,
-              ),
-              onPressed: onRetry,
-              child: const ResponsiveText(
-                'Retry',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+class _Dates {
+  const _Dates(this.from, this.to);
+  final DateTime? from, to;
 }

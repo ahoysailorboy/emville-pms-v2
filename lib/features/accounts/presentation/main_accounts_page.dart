@@ -1,3 +1,7 @@
+import '../data/finance_access.dart';
+import 'account_balance_box.dart';
+import 'package:emville_pms/ui/ledger_panel.dart';
+import 'package:emville_pms/ui/emville_widgets.dart';
 // lib/features/accounts/presentation/main_accounts_page.dart
 import 'dart:async';
 //import 'package:emville_pms/services/role_service.dart';
@@ -24,8 +28,6 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
   bool _isAdmin = false;
 
   // Emville theme colors
-  static const Color _green = Color(0xFF103329);
-  static const Color _gold = Color(0xFFD9A633);
 
   @override
   void initState() {
@@ -34,27 +36,12 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
   }
 
   Future<void> _loadRole() async {
-    final uid = _sb.auth.currentUser?.id;
-    if (uid == null) return;
-    try {
-      final rows = await supabaseCall(() async {
-        return await _sb
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', uid)
-            .limit(1);
-      });
-      final role = rows.isNotEmpty ? rows.first['role'] as String? : null;
-      setState(() {
-        _isAdmin =
-            (role == 'owner' || role == 'admin' || role == 'super_admin');
-      });
-    } catch (_) {
-      setState(() => _isAdmin = false);
-    }
+    final allowed = await FinanceAccess.isOwnerOrAdmin(_sb);
+    if (mounted) setState(() => _isAdmin = allowed);
   }
 
   Future<List<_LedgerRow>> _loadEntries() async {
+    final privileged = await FinanceAccess.isOwnerOrAdmin(_sb);
     final from = DateTime.now()
         .subtract(const Duration(days: 90))
         .toIso8601String()
@@ -63,7 +50,7 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
 
     // Build as FilterBuilder so we can chain .gte() before .order()
     var q = _sb.from('main_ledger').select(
-          'id, date, amount, transaction_type, payee_payer_name, remarks, transaction_status, created_by, approved_by, attachment_path, payment_mode, account_balance, created_time',
+          'id, date, amount, transaction_type, payee_payer_name, remarks, transaction_status, created_by, approved_by, attachment_path, payment_mode, created_time${privileged ? ",account_balance" : ""}',
         ) as PostgrestFilterBuilder;
 
     q = q.gte('date', from);
@@ -93,6 +80,9 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
   }
 
   Future<_Balances> _loadBalances() async {
+    if (!await FinanceAccess.isOwnerOrAdmin(_sb)) {
+      return const _Balances(ledger: 0, approved: 0);
+    }
     final rows = await supabaseCall(() async {
       return await _sb
           .from('main_ledger_balance')
@@ -235,6 +225,7 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
             Text(
               isIncome ? 'Income Receipt' : 'Payment',
               style: TextStyle(
+                fontFamily: 'Roboto',
                 fontSize: rs.font(18),
                 fontWeight: FontWeight.bold,
               ),
@@ -244,7 +235,10 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
             SizedBox(height: rs.space(4)),
             Text(
               'Amount: ₹${row.amount.toStringAsFixed(2)}',
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  fontFamily: 'Roboto',
+                  color: color,
+                  fontWeight: FontWeight.w600),
             ),
             SizedBox(height: rs.space(4)),
             Text('Status: ${row.status}'),
@@ -270,7 +264,7 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
               SizedBox(height: rs.space(4)),
               Text('Notes: ${row.remarks}'),
             ],
-            if (row.accountBalance != null) ...[
+            if (_isAdmin && row.accountBalance != null) ...[
               SizedBox(height: rs.space(4)),
               Text(
                 'Account balance (at entry): ₹${row.accountBalance!.toStringAsFixed(2)}',
@@ -329,338 +323,74 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
   }
 
   // UPDATED: allow nullable onTap and an enabled flag
-  Widget _actionTile({
-    required IconData icon,
-    required String label,
-    VoidCallback? onTap, // <- nullable onTap
-    bool enabled = true, // <- enable/disable visual + tap
-  }) {
-    final rs = ResponsiveSize.of(context);
-
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(rs.radius(12)),
-      child: Container(
-        height: rs.h(100),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(rs.radius(12)),
-          color: enabled ? Colors.white : Colors.grey.shade200,
-          border: Border.all(
-            color:
-                enabled ? _green.withValues(alpha: 0.25) : Colors.grey.shade300,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _green.withValues(alpha: 0.06),
-              blurRadius: rs.w(8),
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: rs.icon(40),
-                width: rs.icon(40),
-                decoration: BoxDecoration(
-                  color: enabled ? _green : Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(rs.radius(10)),
-                ),
-                child: Icon(icon, color: _gold, size: rs.icon(22)),
-              ),
-              SizedBox(height: rs.space(8)),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: enabled ? _green : Colors.grey,
-                  fontSize: rs.font(14),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _balanceTile({required String title, required double amount}) {
-    final rs = ResponsiveSize.of(context);
-    final positive = amount >= 0;
-    final amtColor = positive ? Colors.green : Colors.red;
-    return Container(
-      height: rs.h(92),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(rs.radius(12)),
-        color: Colors.white,
-        border: Border.all(color: _green.withValues(alpha: 0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: _green.withValues(alpha: 0.06),
-            blurRadius: rs.w(8),
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: _green,
-                fontSize: rs.font(13),
-              ),
-            ),
-            SizedBox(height: rs.space(6)),
-            Text(
-              '₹${amount.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: rs.font(18),
-                fontWeight: FontWeight.w800,
-                color: amtColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: _green,
-        iconTheme: const IconThemeData(color: _gold),
-        title: Text(
-          'Main Accounts',
-          style: TextStyle(
-            color: _gold,
-            fontWeight: FontWeight.bold,
-            fontSize: rs.font(18),
-          ),
-        ),
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: FutureBuilder<List<_LedgerRow>>(
-            future: _loadEntries(),
-            builder: (context, snap) {
-              final loading = snap.connectionState != ConnectionState.done;
-              final rows = snap.data ?? const <_LedgerRow>[];
-
-              return Column(
-                children: [
-                  // Fixed top tiles
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      rs.space(12),
-                      rs.space(12),
-                      rs.space(12),
-                      rs.space(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _actionTile(
-                            icon: Icons.attach_money_outlined,
-                            label: 'Income Receipts',
-                            onTap: () async {
-                              await Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const MainIncomeReceiptFormPage(),
-                                ),
-                              );
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                        SizedBox(width: rs.space(8)),
-                        Expanded(
-                          child: _actionTile(
-                            icon: Icons.payments_outlined,
-                            label: 'Payment Receipts',
-                            onTap: () async {
-                              await Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => const MainExpensesFormPage(),
-                                ),
-                              );
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                        SizedBox(width: rs.space(8)),
-                        Expanded(
-                          child: _actionTile(
-                            icon: Icons.badge_outlined,
-                            label: 'Salary Receipts',
-                            onTap: _isAdmin
-                                ? () async {
-                                    await Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const MainSalaryFormPage(),
-                                      ),
-                                    );
-                                    setState(() {});
-                                  }
-                                : null,
-                            enabled: _isAdmin,
-                          ),
-                        ),
-                        SizedBox(width: rs.space(8)),
-                        Expanded(
-                          child: _actionTile(
-                            icon: Icons.pending_actions_outlined,
-                            label: 'Pending Approvals',
-                            onTap: _isAdmin
-                                ? () async {
-                                    await Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const MainAccountPendingApprovalsPage(),
-                                      ),
-                                    );
-                                    setState(() {});
-                                  }
-                                : null,
-                            enabled: _isAdmin,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Scrollable middle list
-                  Expanded(
-                    child: Scrollbar(
-                      child: loading
-                          ? const Center(child: CircularProgressIndicator())
-                          : rows.isEmpty
-                              ? const Center(
-                                  child: Text('No entries in last 90 days'),
-                                )
-                              : ListView.separated(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: rs.space(12),
-                                    vertical: rs.space(4),
-                                  ),
-                                  itemCount: rows.length,
-                                  separatorBuilder: (_, __) =>
-                                      SizedBox(height: rs.space(8)),
-                                  itemBuilder: (context, i) {
-                                    final r = rows[i];
-                                    final isIncome = r.type == 'income';
-                                    final color =
-                                        isIncome ? Colors.green : Colors.red;
-                                    final title =
-                                        isIncome ? 'Income' : 'Expense';
-                                    return Card(
-                                      elevation: 2,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(
-                                            rs.radius(12)),
-                                      ),
-                                      child: ListTile(
-                                        onTap: () => _showDetails(r),
-                                        leading: Container(
-                                          height: rs.icon(40),
-                                          width: rs.icon(40),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                _green.withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(
-                                              rs.radius(10),
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            isIncome
-                                                ? Icons.trending_up
-                                                : Icons.trending_down,
-                                            color: _green,
-                                            size: rs.icon(22),
-                                          ),
-                                        ),
-                                        title: Text(
-                                          '$title • ₹${r.amount.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            color: color,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: rs.font(15),
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          '${r.date}'
-                                          '${(r.payeePayer == null || r.payeePayer!.isEmpty) ? '' : ' • ${r.payeePayer}'}'
-                                          '${(r.remarks == null || r.remarks!.isEmpty) ? '' : ' • ${r.remarks}'}'
-                                          ' • ${r.status}',
-                                          style:
-                                              TextStyle(fontSize: rs.font(13)),
-                                        ),
-                                        trailing: Icon(
-                                          Icons.chevron_right,
-                                          color: _green,
-                                          size: rs.icon(22),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                    ),
-                  ),
-
-                  // Fixed bottom balances
-                  FutureBuilder<_Balances>(
-                    future: _loadBalances(),
-                    builder: (context, balSnap) {
-                      final b = balSnap.data ??
-                          const _Balances(ledger: 0, approved: 0);
-                      return Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          rs.space(12),
-                          rs.space(8),
-                          rs.space(12),
-                          rs.space(12),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _balanceTile(
-                                title: 'Ledger Balance',
-                                amount: b.ledger,
-                              ),
-                            ),
-                            SizedBox(width: rs.space(8)),
-                            Expanded(
-                              child: _balanceTile(
-                                title: 'Approved Balance',
-                                amount: b.approved,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LedgerPanel(
+        title: 'Main ledger',
+        period: 'Last 90 days',
+        onRefresh: _refresh,
+        actions: [
+          OutlinedButton(
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const MainIncomeReceiptFormPage()));
+                if (mounted) setState(() {});
+              },
+              child: const Text('Income receipt')),
+          OutlinedButton(
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const MainExpensesFormPage()));
+                if (mounted) setState(() {});
+              },
+              child: const Text('Payment receipt')),
+          if (_isAdmin)
+            OutlinedButton(
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MainSalaryFormPage()));
+                  if (mounted) setState(() {});
+                },
+                child: const Text('Salary receipt')),
+          if (_isAdmin)
+            OutlinedButton(
+                onPressed: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MainAccountPendingApprovalsPage()));
+                  if (mounted) setState(() {});
+                },
+                child: const Text('Pending approvals')),
+        ],
+        balance: !_isAdmin
+            ? const SizedBox.shrink()
+            : FutureBuilder<_Balances>(
+                future: _loadBalances(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) return EmvilleError(onRetry: _refresh);
+                  return AccountBalanceBox(
+                    label: 'Main ledger',
+                    photo: true,
+                    showUnapproved: _isAdmin,
+                    balance: AccountBalance(
+                        approved: snapshot.data?.approved,
+                        ledger: snapshot.data?.ledger),
+                  );
+                }),
+        entries: _loadEntries().then((rows) => rows
+            .map((r) => LedgerEntry(
+                title: r.remarks?.isNotEmpty == true
+                    ? r.remarks!
+                    : r.payeePayer?.isNotEmpty == true
+                        ? r.payeePayer!
+                        : (r.type == 'income' ? 'Income' : 'Expense'),
+                description:
+                    '${r.payeePayer ?? ''} · ${r.paymentMode ?? '—'} · ${shortDate(r.date)}',
+                date: r.date,
+                amount: r.amount,
+                income: r.type == 'income',
+                status: r.status,
+                onTap: () => _showDetails(r)))
+            .toList()),
+      );
 }
 
 class _Balances {

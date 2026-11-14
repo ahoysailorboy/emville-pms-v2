@@ -1,3 +1,4 @@
+import '../data/finance_access.dart';
 // lib/features/accounts/presentation/report_ledger_page.dart
 import 'dart:io';
 import 'package:excel/excel.dart';
@@ -15,9 +16,31 @@ import 'package:emville_pms/responsive/responsive.dart';
 
 class ReportLedgerPage extends StatefulWidget {
   const ReportLedgerPage({super.key});
+  @override
+  State<ReportLedgerPage> createState() => _ReportAccessState();
+}
+
+class _ReportAccessState extends State<ReportLedgerPage> {
+  late final _access = FinanceAccess.isOwnerOrAdmin(Supabase.instance.client);
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+      future: _access,
+      builder: (context, snapshot) {
+        if (snapshot.data == true) return const _ProtectedLedgerReport();
+        return Scaffold(
+            appBar: AppBar(title: const Text('Main ledger report')),
+            body: Center(
+                child: Text(snapshot.connectionState == ConnectionState.done
+                    ? 'Only owners and admins can view main ledger balances.'
+                    : 'Loading…')));
+      });
+}
+
+class _ProtectedLedgerReport extends StatefulWidget {
+  const _ProtectedLedgerReport();
 
   @override
-  State<ReportLedgerPage> createState() => _ReportLedgerPageState();
+  State<_ProtectedLedgerReport> createState() => __ProtectedLedgerReportState();
 }
 
 enum _RangeMode { monthly, yearly, custom }
@@ -26,7 +49,7 @@ enum _TxStatusFilter { approved, pending, all }
 
 enum _ExportKind { excel, pdf }
 
-class _ReportLedgerPageState extends State<ReportLedgerPage> {
+class __ProtectedLedgerReportState extends State<_ProtectedLedgerReport> {
   final _sb = Supabase.instance.client;
 
   // Emville theme

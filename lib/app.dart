@@ -4,6 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'navigation.dart'; // provides rootNavigatorKey
 import 'features/auth/presentation/auth_gate.dart';
 import 'check_email.dart';
+import 'ui/emville_theme.dart';
+import 'ui/startup_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -18,12 +20,9 @@ class App extends StatelessWidget {
       title: 'Emville PMS',
       debugShowCheckedModeBanner: false,
       onGenerateRoute: onGenerateAppRoute,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF2E7D32),
-        useMaterial3: true,
-      ),
+      theme: Emville.theme,
       // Your normal entry
-      home: const AuthGate(),
+      home: const StartupGate(child: AuthGate()),
 
       // Deep-link target for OneSignal payloads
       routes: <String, WidgetBuilder>{

@@ -1,3 +1,6 @@
+import 'package:emville_pms/ui/emville_calendar.dart';
+import 'package:emville_pms/ui/emville_theme.dart';
+import 'package:emville_pms/ui/emville_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart' show DateFormat;
@@ -12,15 +15,15 @@ import 'package:emville_pms/supabase_call.dart'
     show supabaseCall; // <-- adjust path
 
 /// Emville brand colors
-const Color _emGreen = Color(0xFF103329);
-const Color _emGold = Color(0xFFD9A633);
-const Color _emBg = Color(0xFFF7F6F3);
+const Color _emGreen = Color(0xFF244E3E);
+const Color _emGold = Color(0xFFB98B36);
 
 /// Booking status used for calendar coloring
 enum BookingDayStatus { none, enquiry, confirmed, partial }
 
 class BookingsHubPage extends StatefulWidget {
-  const BookingsHubPage({super.key});
+  const BookingsHubPage({super.key, this.embedded = false});
+  final bool embedded;
 
   @override
   State<BookingsHubPage> createState() => _BookingsHubPageState();
@@ -29,6 +32,11 @@ class BookingsHubPage extends StatefulWidget {
 class _BookingsHubPageState extends State<BookingsHubPage> {
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
   bool _loading = true;
+  bool _loadFailed = false;
+  int _request = 0;
+  DateTime _selectedDay = DateUtils.dateOnly(DateTime.now());
+  late Future<List<dynamic>> _agenda;
+  late Future<List<dynamic>> _today;
 
   /// Map of yyyy-mm-dd to status for quick lookup
   final Map<DateTime, BookingDayStatus> _dayStatus = {};
@@ -37,10 +45,16 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
   void initState() {
     super.initState();
     _loadMonth(_visibleMonth);
+    _today = _fetchBookingsForDay(_selectedDay);
+    _agenda = _today;
   }
 
   Future<void> _loadMonth(DateTime anchor) async {
-    setState(() => _loading = true);
+    final request = ++_request;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
     final first = DateTime(anchor.year, anchor.month, 1);
     final nextMonth = DateTime(anchor.year, anchor.month + 1, 1);
     try {
@@ -54,6 +68,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
             .lt('day', nextMonth.toIso8601String());
       });
 
+      if (!mounted || request != _request) return;
       // Clear month slice, then rebuild
       _dayStatus.removeWhere((key, value) =>
           key.isAfter(first.subtract(const Duration(days: 1))) &&
@@ -74,25 +89,31 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
           _dayStatus.putIfAbsent(key, () => BookingDayStatus.none);
         }
       }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to fetch calendar days: $e')),
-      );
+    } catch (_) {
+      if (!mounted || request != _request) return;
+      setState(() => _loadFailed = true);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && request == _request) setState(() => _loading = false);
     }
   }
 
   void _goPrevMonth() {
     final prev = DateTime(_visibleMonth.year, _visibleMonth.month - 1, 1);
-    setState(() => _visibleMonth = prev);
+    setState(() {
+      _visibleMonth = prev;
+      _selectedDay = prev;
+      _agenda = _fetchBookingsForDay(prev);
+    });
     _loadMonth(prev);
   }
 
   void _goNextMonth() {
     final next = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 1);
-    setState(() => _visibleMonth = next);
+    setState(() {
+      _visibleMonth = next;
+      _selectedDay = next;
+      _agenda = _fetchBookingsForDay(next);
+    });
     _loadMonth(next);
   }
 
@@ -114,6 +135,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
           check_out,
           guest_name,
           no_of_pax,
+          no_of_rooms,
           source,
           total_price,
           advance_paid,
@@ -162,8 +184,10 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
             ),
             title: ResponsiveText(
               'Bookings for ${DateFormat('EEE, MMM d').format(day)}',
-              style:
-                  const TextStyle(fontWeight: FontWeight.w700, color: _emGold),
+              style: const TextStyle(
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w700,
+                  color: _emGold),
               fontSize: 18,
             ),
             content: SizedBox(
@@ -173,7 +197,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
               child: items.isEmpty
                   ? const ResponsiveText(
                       'No details found for this date.',
-                      style: TextStyle(color: _emGreen),
+                      style: TextStyle(fontFamily: 'Roboto', color: _emGreen),
                       fontSize: 15,
                     )
                   : StatefulBuilder(
@@ -216,6 +240,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                     child: ResponsiveText(
                                       guestName,
                                       style: const TextStyle(
+                                        fontFamily: 'Roboto',
                                         color: _emGreen,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -228,6 +253,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                   ResponsiveText(
                                     '$checkInStr → $checkOutStr',
                                     style: TextStyle(
+                                      fontFamily: 'Roboto',
                                       color: _emGreen.withValues(alpha: 0.8),
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -264,6 +290,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                     title: ResponsiveText(
                                       guestName,
                                       style: const TextStyle(
+                                        fontFamily: 'Roboto',
                                         color: _emGreen,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -277,6 +304,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                         'Status: ${status[0].toUpperCase()}${status.length > 1 ? status.substring(1) : ''}'
                                             .replaceAll('Unknown', '—'),
                                         style: TextStyle(
+                                          fontFamily: 'Roboto',
                                           color:
                                               _emGreen.withValues(alpha: 0.9),
                                           fontWeight: FontWeight.w600,
@@ -302,7 +330,9 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                       SizedBox(height: rs.h(12)),
                                       const ResponsiveText(
                                         'Special Requests:',
-                                        style: TextStyle(color: _emGreen),
+                                        style: TextStyle(
+                                            fontFamily: 'Roboto',
+                                            color: _emGreen),
                                         fontSize: 15,
                                       ),
                                       SizedBox(height: rs.h(10)),
@@ -326,6 +356,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                               ? (b['notes'] as String)
                                               : '—',
                                           style: TextStyle(
+                                              fontFamily: 'Roboto',
                                               color: _emGreen.withValues(
                                                   alpha: 0.9)),
                                           fontSize: 15,
@@ -396,6 +427,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                               label: const ResponsiveText(
                                                 'Confirm',
                                                 style: TextStyle(
+                                                    fontFamily: 'Roboto',
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: 14),
                                               ),
@@ -457,6 +489,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                               label: const ResponsiveText(
                                                 'Edit',
                                                 style: TextStyle(
+                                                    fontFamily: 'Roboto',
                                                     fontWeight: FontWeight.w700,
                                                     fontSize: 14),
                                               ),
@@ -481,6 +514,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                 label: const Text(
                   "Close",
                   style: TextStyle(
+                    fontFamily: 'Roboto',
                     color: _emGold,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -507,7 +541,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
         children: [
           ResponsiveText(
             k,
-            style: const TextStyle(color: _emGreen),
+            style: const TextStyle(fontFamily: 'Roboto', color: _emGreen),
             fontSize: 15,
           ),
           const SizedBox(width: 6),
@@ -515,6 +549,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
             child: ResponsiveText(
               v,
               style: const TextStyle(
+                fontFamily: 'Roboto',
                 color: _emGreen,
                 fontWeight: FontWeight.w700,
               ),
@@ -528,533 +563,318 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-
-    return ResponsiveScaffold(
-      backgroundColor: _emBg,
-      appBar: AppBar(
-        //backgroundColor: _emGreen,
-        title: const ResponsiveText('Booking Hub',
-            style: TextStyle(fontWeight: FontWeight.w700, color: _emGreen),
-            fontSize: 18),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: RefreshIndicator(
-        onRefresh: () => _loadMonth(_visibleMonth),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _ActionTiles(),
-              SizedBox(height: rs.space(16)),
-              _CalendarHeader(
-                month: _visibleMonth,
-                onPrev: _goPrevMonth,
-                onNext: _goNextMonth,
-              ),
-              SizedBox(height: rs.space(8)),
-              _CalendarGrid(
-                month: _visibleMonth,
-                dayStatus: _dayStatus,
-                loading: _loading,
-                onDayTap: (day, status) {
-                  // fire-and-forget the async function; no await here
-                  _onDayTap(context, day, status);
-                },
-              ),
-              SizedBox(height: rs.space(12)),
-              const _Legend(),
-            ],
-          ),
-        ),
-      ),
-    );
+  Future<void> _refresh() async {
+    setState(() {
+      _today = _fetchBookingsForDay(DateUtils.dateOnly(DateTime.now()));
+      _agenda = DateUtils.isSameDay(_selectedDay, DateTime.now())
+          ? _today
+          : _fetchBookingsForDay(_selectedDay);
+    });
+    await _loadMonth(_visibleMonth);
   }
-}
 
-class _ActionTiles extends StatelessWidget {
-  const _ActionTiles();
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-
-    return SizedBox(
-      height: rs.h(150), // makes tiles square-ish; tweak as needed
-      child: GridView.count(
-        crossAxisCount: 3, // always 3 columns side by side
-        physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 0.9, // square tiles
-        shrinkWrap: true,
-        mainAxisSpacing: rs.w(8),
-        crossAxisSpacing: rs.w(8),
-        children: [
-          _HubTile(
-            icon: Icons.add_box_outlined,
-            title: 'New booking',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const BookingNewPage()),
-              );
-            },
-          ),
-          _HubTile(
-            icon: Icons.event_available_outlined,
-            title: 'Existing bookings',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ExistingBookingPage()),
-              );
-            },
-          ),
-          _HubTile(
-            icon: Icons.mark_email_unread_outlined,
-            title: 'Check Email',
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CheckEmailPage(),
-                  settings: RouteSettings(arguments: {
-                    "test_mode": true,
-                    "message": "Manual launch of Check Email page",
-                  }),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => page,
+        settings: page is CheckEmailPage
+            ? const RouteSettings(arguments: {
+                'test_mode': true,
+                'message': 'Manual launch of Check Email page'
+              })
+            : null));
+    if (mounted) await _refresh();
   }
-}
-
-class _HubTile extends StatelessWidget {
-  const _HubTile({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    final tokens = R.tokens(context);
-
-    return Material(
-      color: Colors.white,
-      elevation: 1,
-      borderRadius: BorderRadius.circular(tokens.radius),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(tokens.radius),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(tokens.radius),
-            border: Border.all(color: _emGreen.withValues(alpha: 0.12)),
-          ),
-          child: AspectRatio(
-            aspectRatio: 0.9, // makes the tile square
-            child: Padding(
-              padding: EdgeInsets.all(rs.w(12)),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final user = Supabase.instance.client.auth.currentUser;
+    final name = (user?.userMetadata?['full_name'] ??
+            user?.userMetadata?['name'] ??
+            user?.email?.split('@').first ??
+            '')
+        .toString()
+        .trim()
+        .split(' ')
+        .first;
+    final body = EmvilleBody(
+        child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
                 children: [
                   Container(
-                    padding: EdgeInsets.all(rs.w(10)),
-                    decoration: BoxDecoration(
-                      color: _emGreen,
-                      borderRadius: BorderRadius.circular(rs.radius(12)),
-                    ),
-                    child:
-                        Icon(icon, color: _emGold, size: R.icon(context, 28)),
-                  ),
-                  ResponsiveText(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: _emGreen,
-                    ),
-                    fontSize: 14,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+                      decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(13),
+                          image: const DecorationImage(
+                              image: AssetImage(Emville.pool),
+                              fit: BoxFit.cover)),
+                      child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(13),
+                              gradient: const LinearGradient(colors: [
+                                Color(0xEB113D32),
+                                Color(0x70113D32)
+                              ])),
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('YOUR DAY AT EMVILLE',
+                                    style: TextStyle(
+                                        fontFamily: 'Roboto',
+                                        fontSize: 10,
+                                        letterSpacing: 2,
+                                        color: Colors.white)),
+                                const SizedBox(height: 8),
+                                Text(
+                                    name.isEmpty
+                                        ? 'Welcome home.'
+                                        : 'Welcome home, $name.',
+                                    style: Emville.heading(27)
+                                        .copyWith(color: Colors.white)),
+                                const SizedBox(height: 8),
+                                Text(
+                                    DateFormat('EEEE, d MMMM yyyy')
+                                        .format(DateTime.now()),
+                                    style: const TextStyle(
+                                        fontFamily: 'Roboto',
+                                        fontSize: 11,
+                                        color: Color(0xFFE5EADF))),
+                              ]))),
+                  FutureBuilder<List<dynamic>>(
+                      future: _today,
+                      builder: (context, snapshot) {
+                        final today = DateUtils.dateOnly(DateTime.now());
+                        final confirmed = (snapshot.data ?? [])
+                            .where((row) => row['status'] == 'confirmed');
+                        int rooms = 0, arrivals = 0, departures = 0;
+                        for (final row in confirmed) {
+                          final start = DateTime.tryParse(
+                              row['check_in']?.toString() ?? '');
+                          final end = DateTime.tryParse(
+                              row['check_out']?.toString() ?? '');
+                          if (start == null || end == null) continue;
+                          if (DateUtils.isSameDay(start, today)) arrivals++;
+                          if (DateUtils.isSameDay(end, today)) departures++;
+                          if (!DateUtils.dateOnly(start).isAfter(today) &&
+                              DateUtils.dateOnly(end).isAfter(today)) {
+                            rooms += (row['no_of_rooms'] as num?)?.toInt() ?? 0;
+                          }
+                        }
+                        return Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 12),
+                            child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  _stat(
+                                      snapshot.hasData
+                                          ? '$rooms / $kPropertyTotalRooms'
+                                          : '—',
+                                      'Rooms occupied'),
+                                  _stat(snapshot.hasData ? '$arrivals' : '—',
+                                      'Arrival today'),
+                                  _stat(snapshot.hasData ? '$departures' : '—',
+                                      'Departure today'),
+                                ]));
+                      }),
+                  if (_loadFailed)
+                    EmvilleError(
+                        message: 'Could not load the booking calendar.',
+                        onRetry: () => _loadMonth(_visibleMonth))
+                  else
+                    EmvilleCalendar(
+                        month: _visibleMonth,
+                        selectedDay: _selectedDay,
+                        activity: _dayStatus.entries
+                            .where((e) => e.value != BookingDayStatus.none)
+                            .map((e) => e.key)
+                            .toSet(),
+                        loading: _loading,
+                        onPrevious: _goPrevMonth,
+                        onNext: _goNextMonth,
+                        onSelected: (day) => setState(() {
+                              _selectedDay = day;
+                              _agenda = _fetchBookingsForDay(day);
+                            })),
+                  Padding(
+                      padding: const EdgeInsets.fromLTRB(3, 14, 3, 12),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Expanded(
+                                  child: Text(
+                                      DateFormat('EEEE, d MMMM')
+                                          .format(_selectedDay),
+                                      style: Emville.heading(19))),
+                              if (DateUtils.isSameDay(
+                                  _selectedDay, DateTime.now()))
+                                const Text('Today',
+                                    style: TextStyle(
+                                        fontFamily: 'Roboto',
+                                        fontSize: 10,
+                                        color: Emville.muted))
+                            ]),
+                            FutureBuilder<List<dynamic>>(
+                                future: _agenda,
+                                builder: (context, snapshot) {
+                                  if (snapshot.hasError) {
+                                    return EmvilleError(
+                                        message:
+                                            'Could not load stays for this day.',
+                                        onRetry: _refresh);
+                                  }
+                                  if (!snapshot.hasData) {
+                                    return const Padding(
+                                        padding: EdgeInsets.all(18),
+                                        child: Center(
+                                            child: SizedBox(
+                                                width: 18,
+                                                height: 18,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                        strokeWidth: 2))));
+                                  }
+                                  final rows = snapshot.data!
+                                      .where((r) => r['status'] != 'cancelled')
+                                      .toList();
+                                  if (rows.isEmpty) {
+                                    return const Padding(
+                                        padding:
+                                            EdgeInsets.symmetric(vertical: 19),
+                                        child: Text(
+                                            'No stays scheduled for this day.',
+                                            style: TextStyle(
+                                                fontFamily: 'Roboto',
+                                                fontSize: 11,
+                                                color: Emville.muted)));
+                                  }
+                                  return Column(
+                                      children: rows.take(1).map((row) {
+                                    final guest =
+                                        row['guest_name']?.toString() ??
+                                            'Guest';
+                                    final initials = guest
+                                        .split(' ')
+                                        .where((s) => s.isNotEmpty)
+                                        .take(2)
+                                        .map((s) => s[0])
+                                        .join();
+                                    final start = DateTime.tryParse(
+                                        row['check_in']?.toString() ?? '');
+                                    final end = DateTime.tryParse(
+                                        row['check_out']?.toString() ?? '');
+                                    final status = row['status'] == 'enquiry'
+                                        ? 'Enquiry'
+                                        : DateUtils.isSameDay(
+                                                start, _selectedDay)
+                                            ? 'Arrival'
+                                            : DateUtils.isSameDay(
+                                                    end, _selectedDay)
+                                                ? 'Departure'
+                                                : 'In-house';
+                                    return InkWell(
+                                        onTap: () async {
+                                          await _onDayTap(
+                                              context,
+                                              _selectedDay,
+                                              _dayStatus[_selectedDay] ??
+                                                  BookingDayStatus.none);
+                                          if (mounted) await _refresh();
+                                        },
+                                        child: Padding(
+                                            padding: const EdgeInsets.only(
+                                                top: 16, bottom: 10),
+                                            child: Row(children: [
+                                              Container(
+                                                  width: 42,
+                                                  height: 42,
+                                                  alignment: Alignment.center,
+                                                  decoration: BoxDecoration(
+                                                      color: Emville.sage,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              11)),
+                                                  child: Text(initials,
+                                                      style:
+                                                          Emville.heading(15))),
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                  child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                    Text(guest,
+                                                        style: const TextStyle(
+                                                            fontFamily:
+                                                                'Roboto',
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w600)),
+                                                    const SizedBox(height: 5),
+                                                    Text(
+                                                        '${row['no_of_rooms'] ?? '—'} rooms · ${start == null ? '—' : DateFormat('d').format(start)}–${end == null ? '—' : DateFormat('d MMM').format(end)} · ${row['no_of_pax'] ?? '—'} guests',
+                                                        style: const TextStyle(
+                                                            fontFamily:
+                                                                'Roboto',
+                                                            fontSize: 10,
+                                                            color:
+                                                                Emville.muted))
+                                                  ])),
+                                              const SizedBox(width: 6),
+                                              EmvilleTag(status),
+                                            ])));
+                                  }).toList());
+                                }),
+                          ])),
+                  Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: FilledButton(
+                          onPressed: () => _open(const BookingNewPage()),
+                          child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add, size: 16),
+                                SizedBox(width: 8),
+                                Text('New booking')
+                              ]))),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    TextButton(
+                        onPressed: () => _open(const ExistingBookingPage()),
+                        child: const Text('All bookings',
+                            style:
+                                TextStyle(fontFamily: 'Roboto', fontSize: 10))),
+                    TextButton(
+                        onPressed: () => _open(const CheckEmailPage()),
+                        child: const Text('Booking email',
+                            style:
+                                TextStyle(fontFamily: 'Roboto', fontSize: 10)))
+                  ]),
+                ])));
+    return widget.embedded ? body : EmvillePage(section: 0, child: body);
   }
-}
 
-class _CalendarHeader extends StatelessWidget {
-  const _CalendarHeader(
-      {required this.month, required this.onPrev, required this.onNext});
-  final DateTime month;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-
-  String _formatMonth(BuildContext context, DateTime m) {
-    try {
-      return DateFormat('MMMM yyyy').format(m);
-    } catch (_) {
-      const names = [
-        'January',
-        'February',
-        'March',
-        'April',
-        'May',
-        'June',
-        'July',
-        'August',
-        'September',
-        'October',
-        'November',
-        'December'
-      ];
-      return '${names[m.month - 1]} ${m.year}';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(R.radius(context, 16)),
-        border: Border.all(color: _emGreen.withValues(alpha: 0.12)),
-      ),
-      padding: EdgeInsets.symmetric(horizontal: rs.w(12), vertical: rs.h(10)),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Previous month',
-            onPressed: onPrev,
-            icon: const Icon(Icons.chevron_left),
-            color: _emGreen,
-          ),
-          Expanded(
-            child: Center(
-              child: ResponsiveText(
-                _formatMonth(context, month),
+  Widget _stat(String value, String label) =>
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (label == 'Rooms occupied' && value.contains('/'))
+          RichText(
+              text: TextSpan(style: Emville.heading(24), children: [
+            TextSpan(text: value.split('/').first.trim()),
+            TextSpan(
+                text: ' / ${value.split('/').last.trim()}',
                 style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: _emGreen,
-                ),
-                fontSize: 18,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Next month',
-            onPressed: onNext,
-            icon: const Icon(Icons.chevron_right),
-            color: _emGreen,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CalendarGrid extends StatelessWidget {
-  const _CalendarGrid({
-    required this.month,
-    required this.dayStatus,
-    required this.loading,
-    this.onDayTap,
-  });
-
-  final DateTime month;
-  final Map<DateTime, BookingDayStatus> dayStatus;
-  final bool loading;
-  final void Function(DateTime day, BookingDayStatus status)? onDayTap;
-
-  List<DateTime> _buildDays(DateTime m) {
-    final firstOfMonth = DateTime(m.year, m.month, 1);
-    final startWeekday = firstOfMonth.weekday % 7; // make Sunday=0
-    final daysBefore = startWeekday; // 0..6
-    final start = firstOfMonth.subtract(Duration(days: daysBefore));
-
-    final lastOfMonth = DateTime(m.year, m.month + 1, 0);
-    final endWeekday = lastOfMonth.weekday % 7; // Sunday=0
-    final daysAfter = 6 - endWeekday;
-
-    final totalDays = (lastOfMonth.difference(start).inDays + 1) + daysAfter;
-    return List.generate(
-      totalDays,
-      (i) => DateTime(start.year, start.month, start.day + i),
-    );
-  }
-
-  BookingDayStatus _statusOf(DateTime d) {
-    final k = DateTime(d.year, d.month, d.day);
-    return dayStatus[k] ?? BookingDayStatus.none;
-  }
-
-  /// Occupied NIGHT rule:
-  /// highlight a day `d` when `d` is booked AND `d+1` is booked.
-  /// This paints [check_in .. check_out-1] (and excludes the checkout day).
-  bool _highlightNight(DateTime d) {
-    final today = _statusOf(d);
-    if (today == BookingDayStatus.none) return false;
-    final tomorrow = _statusOf(d.add(const Duration(days: 1)));
-    return tomorrow != BookingDayStatus.none;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    final days = _buildDays(month);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(R.radius(context, 16)),
-        border: Border.all(color: _emGreen.withValues(alpha: 0.12)),
-      ),
-      padding: EdgeInsets.symmetric(horizontal: rs.w(8), vertical: rs.h(12)),
-      child: Column(
-        children: [
-          // Weekday headers
-          Padding(
-            padding:
-                EdgeInsets.symmetric(horizontal: rs.w(6), vertical: rs.h(4)),
-            child: Row(
-              children: const [
-                _WeekdayLabel('Sun'),
-                _WeekdayLabel('Mon'),
-                _WeekdayLabel('Tue'),
-                _WeekdayLabel('Wed'),
-                _WeekdayLabel('Thu'),
-                _WeekdayLabel('Fri'),
-                _WeekdayLabel('Sat'),
-              ],
-            ),
-          ),
-          SizedBox(height: rs.space(6)),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.15,
-            ),
-            itemCount: days.length,
-            itemBuilder: (context, index) {
-              final d = days[index];
-              final inMonth = d.month == month.month;
-              final status = _statusOf(d);
-              final highlight = _highlightNight(d); // ⟵ core change
-
-              // Colors (use your palette only when highlighting nights)
-              Color bg;
-              Color border;
-              switch (status) {
-                case BookingDayStatus.confirmed:
-                  bg = highlight
-                      ? const Color.fromARGB(255, 31, 165, 78)
-                      : Colors.white;
-                  border = highlight
-                      ? _emGreen.withValues(alpha: 0.4)
-                      : _emGreen.withValues(alpha: 0.08);
-                  break;
-                case BookingDayStatus.enquiry:
-                  bg = highlight
-                      ? const Color.fromARGB(110, 210, 178, 14)
-                      : Colors.white;
-                  border = highlight
-                      ? const Color.fromARGB(110, 210, 178, 14)
-                      : _emGreen.withValues(alpha: 0.08);
-                  break;
-                case BookingDayStatus.partial:
-                  bg = highlight
-                      ? const Color.fromARGB(255, 28, 188, 190)
-                      : Colors.white;
-                  border = highlight
-                      ? _emGreen.withValues(alpha: 0.4)
-                      : _emGreen.withValues(alpha: 0.08);
-                  break;
-                case BookingDayStatus.none:
-                  bg = Colors.white;
-                  border = _emGreen.withValues(alpha: 0.08);
-                  break;
-              }
-
-              final fg = _emGreen.withValues(alpha: inMonth ? 1 : 0.4);
-
-              return Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(R.radius(context, 12)),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(R.radius(context, 12)),
-                  onTap: inMonth
-                      ? () => onDayTap?.call(
-                          DateTime(d.year, d.month, d.day), status)
-                      : null,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius:
-                          BorderRadius.circular(R.radius(context, 12)),
-                      border: Border.all(color: border, width: 1),
-                    ),
-                    child: Stack(
-                      children: [
-                        Positioned(
-                          top: rs.h(8),
-                          left: rs.w(8),
-                          child: ResponsiveText(
-                            '${d.day}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: fg,
-                            ),
-                            fontSize: 14,
-                          ),
-                        ),
-
-                        // Optional: subtle dot for any booked (non-highlighted) day
-                        if (!highlight && status != BookingDayStatus.none)
-                          Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Container(
-                              width: rs.w(6),
-                              height: rs.w(6),
-                              margin: EdgeInsets.only(bottom: rs.h(6)),
-                              decoration: BoxDecoration(
-                                color: _emGreen.withValues(alpha: 0.25),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-
-                        if (!inMonth)
-                          Positioned.fill(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.35),
-                                borderRadius: BorderRadius.circular(
-                                    R.radius(context, 12)),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          if (loading) ...[
-            SizedBox(height: rs.space(12)),
-            const LinearProgressIndicator(minHeight: 3),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _WeekdayLabel extends StatelessWidget {
-  const _WeekdayLabel(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Center(
-        child: ResponsiveText(
-          text,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.3,
-            color: _emGreen,
-          ),
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-}
-
-class _Legend extends StatelessWidget {
-  const _Legend();
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    return Wrap(
-      spacing: rs.w(14),
-      runSpacing: rs.h(10),
-      children: const [
-        _LegendItem(
-            color: Color.fromARGB(255, 31, 165, 78),
-            border: _emGreen,
-            label: 'Confirmed'),
-        _LegendItem(
-            color: Color.fromARGB(255, 28, 188, 190),
-            border: _emGreen,
-            label: 'Partial Booking'),
-        _LegendItem(
-            color: Color.fromARGB(110, 210, 178, 14),
-            border: Color.fromARGB(110, 210, 178, 14),
-            label: 'Enquiry'),
-      ],
-    );
-  }
-}
-
-class _LegendItem extends StatelessWidget {
-  const _LegendItem({
-    required this.color,
-    required this.border,
-    required this.label,
-  });
-
-  final Color color;
-  final Color border;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: rs.w(18),
-          height: rs.h(18),
-          decoration: BoxDecoration(
-            color: color,
-            border: Border.all(color: border),
-            borderRadius: BorderRadius.circular(R.radius(context, 6)),
-          ),
-        ),
-        SizedBox(width: rs.w(8)),
-        ResponsiveText(
-          label,
-          style: const TextStyle(
-            color: _emGreen,
-            fontWeight: FontWeight.w600,
-          ),
-          fontSize: 14,
-        ),
-      ],
-    );
-  }
+                    fontFamily: 'Roboto', fontSize: 10, color: Emville.muted))
+          ]))
+        else
+          Text(value, style: Emville.heading(24)),
+        const SizedBox(height: 5),
+        Text(label,
+            style: const TextStyle(
+                fontFamily: 'Roboto', fontSize: 10, color: Emville.muted)),
+      ]);
 }

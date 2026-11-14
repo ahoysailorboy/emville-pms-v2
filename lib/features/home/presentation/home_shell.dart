@@ -1,3 +1,4 @@
+import 'package:emville_pms/features/bookings/existing_booking.dart';
 // lib/features/home/presentation/home_shell.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,7 +12,9 @@ import 'package:emville_pms/features/user_records/my_profile.dart';
 import 'package:emville_pms/features/pms/pms_advanced_search.dart';
 import 'package:emville_pms/features/bookings/bookings_hub.dart';
 // ✅ responsive barrel
-import 'package:emville_pms/responsive/responsive.dart';
+import 'package:emville_pms/ui/emville_theme.dart';
+import 'package:emville_pms/ui/emville_widgets.dart';
+import 'package:emville_pms/features/accounts/presentation/generate_reports_page.dart';
 import 'package:emville_pms/services/onesignal_sync.dart';
 
 enum _Menu {
@@ -24,6 +27,8 @@ enum _Menu {
   myProfile,
   userManagement, // admins only
   bookingsHub,
+  maintenance,
+  reports,
 }
 
 class HomeShell extends StatefulWidget {
@@ -38,246 +43,148 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _sb = Supabase.instance.client;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   _Menu _selected = _Menu.home;
   bool get _isAdmin => (widget.role == 'owner') || (widget.role == 'admin');
 
+  static const _destinations = [
+    _Menu.home,
+    _Menu.bookingsHub,
+    _Menu.accountsHub,
+    _Menu.maintenance
+  ];
+  @override
+  void initState() {
+    super.initState();
+    EmvilleNavigation.section.value = 0;
+    EmvilleNavigation.section.addListener(_sectionChanged);
+    EmvilleNavigation.drawerOpener = _openDrawer;
+  }
+
+  void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
+
+  void _sectionChanged() {
+    final index = EmvilleNavigation.section.value;
+    if (mounted && index >= 0 && index < _destinations.length) {
+      setState(() => _selected = _destinations[index]);
+    }
+  }
+
+  @override
+  void dispose() {
+    EmvilleNavigation.section.removeListener(_sectionChanged);
+    if (EmvilleNavigation.drawerOpener == _openDrawer) {
+      EmvilleNavigation.drawerOpener = null;
+    }
+    super.dispose();
+  }
+
   void _select(_Menu m) {
     setState(() => _selected = m);
-    Navigator.of(context).pop(); // close the drawer
+    EmvilleNavigation.section.value = _destinations.indexOf(m);
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Emville brand colors
-    const Color emvilleGreen = Color(0xFF103329);
-    const Color emvilleGold = Color(0xFFD9A633);
-
-    // ✅ responsive helper
-    final rs = ResponsiveSize.of(context);
-
     final body = switch (_selected) {
-      _Menu.home => FirstPage(role: widget.role),
+      _Menu.home => const BookingsHubPage(embedded: true),
+      _Menu.maintenance => FirstPage(role: widget.role),
+      _Menu.reports => const GenerateReportsPage(embedded: true),
       _Menu.pmsTasks => const AddPmsTaskPage(),
       _Menu.pmsReports => const GeneratePmsReportPage(),
       _Menu.editPmsTasks => const EditPmsPage(),
-      _Menu.accountsHub => const AccountsHubPage(),
+      _Menu.accountsHub => AccountsHubPage(role: widget.role),
       _Menu.myProfile => const MyProfilePage(),
       _Menu.userManagement => const UserManagementPage(),
       _Menu.advancedSearch => const PmsAdvancedSearchPage(),
-      _Menu.bookingsHub => const BookingsHubPage(),
+      _Menu.bookingsHub => const ExistingBookingPage(embedded: true),
     };
 
+    final selectedIndex = _destinations.indexOf(_selected);
+    final name = (_sb.auth.currentUser?.userMetadata?['full_name'] ??
+            _sb.auth.currentUser?.userMetadata?['name'] ??
+            'Emville')
+        .toString();
+    final initials = name
+        .split(' ')
+        .where((s) => s.isNotEmpty)
+        .take(2)
+        .map((s) => s[0])
+        .join()
+        .toUpperCase();
+    EmvilleNavigation.initials = initials;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: emvilleGreen,
-        iconTheme: const IconThemeData(color: emvilleGold), // hamburger color
-        title: Text(
-          'Emville PMS',
-          style: TextStyle(
-            color: emvilleGold,
-            fontWeight: FontWeight.bold,
-            fontSize: rs.font(18),
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Sign out',
-            icon: Icon(Icons.logout, color: emvilleGold, size: rs.icon(22)),
-            onPressed: () async {
-              await _sb.auth.signOut(scope: SignOutScope.local);
-              // ✅ Immediately clear OneSignal tags and logout the device
-              await syncOneSignalIdentityAndRoleFromUsersV();
-            },
-          ),
-        ],
-      ),
+      key: _scaffoldKey,
       drawer: Drawer(
-        child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.symmetric(vertical: rs.space(8)),
-            children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(color: emvilleGreen),
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: rs.space(4)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Text(
-                        'Emville PMS',
-                        style: TextStyle(
-                          color: emvilleGold,
-                          fontSize: rs.font(18),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (widget.role != null)
-                        Text(
-                          'Role: ${widget.role}',
-                          style: TextStyle(
-                            color: emvilleGold.withValues(alpha: 0.8),
-                            fontSize: rs.font(12),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Home
-              ListTile(
-                leading: Icon(Icons.home, size: rs.icon(22)),
-                title: Text('Home', style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.home,
-                onTap: () => _select(_Menu.home),
-              ),
-
-              // Add PMS tasks (admins only)
-
-              ListTile(
-                leading: Icon(Icons.playlist_add_check, size: rs.icon(22)),
-                title: Text('Add PMS tasks',
-                    style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.pmsTasks,
-                onTap: () => _select(_Menu.pmsTasks),
-              ),
-
-              // Generate PMS reports
-              ListTile(
-                leading: Icon(Icons.assessment, size: rs.icon(22)),
-                title: Text('Generate PMS reports',
-                    style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.pmsReports,
-                onTap: () => _select(_Menu.pmsReports),
-              ),
-
-              ListTile(
-                leading: Icon(Icons.assessment, size: rs.icon(22)),
-                title: Text('PMS Advanced Search',
-                    style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.advancedSearch,
-                onTap: () => _select(_Menu.advancedSearch),
-              ),
-
-              Divider(height: rs.space(24)),
-
-              // Accounts hub
-              ListTile(
-                leading: Icon(Icons.account_balance_wallet, size: rs.icon(22)),
-                title:
-                    Text('Accounts', style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.accountsHub,
-                onTap: () => _select(_Menu.accountsHub),
-              ),
-
-              Divider(height: rs.space(24)),
-
-              ListTile(
-                leading: Icon(Icons.calendar_month, size: rs.icon(22)),
-                title:
-                    Text('Bookings', style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.bookingsHub,
-                onTap: () => _select(_Menu.bookingsHub),
-              ),
-
-              Divider(height: rs.space(24)),
-
-              ListTile(
-                leading: Icon(Icons.settings, size: rs.icon(22)),
-                title: Text('Profile', style: TextStyle(fontSize: rs.font(14))),
-                selected: _selected == _Menu.myProfile,
-                onTap: () => _select(_Menu.myProfile),
-              ),
-
-              if (_isAdmin) Divider(height: rs.space(24)),
-
-              // Admin section
-              if (_isAdmin)
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: rs.space(16),
-                    vertical: rs.space(8),
-                  ),
-                  child: Text(
-                    'Admin',
-                    style: TextStyle(
-                      fontSize: rs.font(12),
-                      color: Colors.black54,
-                    ),
-                  ),
-                ),
-
-              if (_isAdmin)
-                ListTile(
-                  leading:
-                      Icon(Icons.edit_calendar_outlined, size: rs.icon(22)),
-                  title:
-                      Text('Edit PMS', style: TextStyle(fontSize: rs.font(14))),
-                  selected: _selected == _Menu.editPmsTasks,
-                  onTap: () => _select(_Menu.editPmsTasks),
-                ),
-
-              if (_isAdmin)
-                ListTile(
-                  leading: Icon(Icons.account_tree, size: rs.icon(22)),
-                  title: Text('User Management',
-                      style: TextStyle(fontSize: rs.font(14))),
-                  selected: _selected == _Menu.userManagement,
-                  onTap: () => _select(_Menu.userManagement),
-                ),
-            ],
+          child: SafeArea(
+              child: ListView(children: [
+        Padding(
+            padding: const EdgeInsets.all(30),
+            child: Image.asset(Emville.logo, height: 90)),
+        if (widget.role != null)
+          Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Signed in as ${widget.role}')),
+        for (final item in <(_Menu, IconData, String)>[
+          (_Menu.home, Icons.home_outlined, 'Home'),
+          (_Menu.bookingsHub, Icons.event_available_outlined, 'Bookings'),
+          (
+            _Menu.accountsHub,
+            Icons.account_balance_wallet_outlined,
+            'Accounts'
           ),
-        ),
-      ),
-      body: Padding(
-        padding: EdgeInsets.all(rs.space(16)),
-        child: body,
-      ),
-    );
-  }
-}
-
-// ignore: unused_element
-class _SectionPlaceholder extends StatelessWidget {
-  const _SectionPlaceholder({required this.title, required this.subtitle});
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final rs = ResponsiveSize.of(context);
-    return Card(
-      elevation: 0.5,
-      child: SizedBox.expand(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(rs.space(24)),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: rs.font(20),
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: rs.space(8)),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.black54,
-                    fontSize: rs.font(14),
-                  ),
-                ),
-              ],
+          (_Menu.maintenance, Icons.handyman_outlined, 'Planned maintenance'),
+          (_Menu.reports, Icons.insights_outlined, 'Reports'),
+          (_Menu.pmsTasks, Icons.playlist_add, 'Add maintenance task'),
+          (_Menu.pmsReports, Icons.assessment_outlined, 'Maintenance reports'),
+          (_Menu.advancedSearch, Icons.search, 'Search maintenance'),
+          (_Menu.myProfile, Icons.person_outline, 'My profile'),
+          if (_isAdmin)
+            (
+              _Menu.editPmsTasks,
+              Icons.edit_calendar_outlined,
+              'Edit maintenance tasks'
             ),
-          ),
-        ),
-      ),
+          if (_isAdmin)
+            (
+              _Menu.userManagement,
+              Icons.manage_accounts_outlined,
+              'User management'
+            ),
+        ])
+          ListTile(
+              leading: Icon(item.$2),
+              title: Text(item.$3),
+              selected: _selected == item.$1,
+              onTap: () => _select(item.$1)),
+        const Divider(),
+        ListTile(
+            leading: const Icon(Icons.logout, size: 20),
+            title: const Text('Sign out'),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await _sb.auth.signOut(scope: SignOutScope.local);
+              await syncOneSignalIdentityAndRoleFromUsersV();
+            }),
+      ]))),
+      body: SafeArea(
+          bottom: false,
+          child: Column(children: [
+            RepaintBoundary(
+                child: Builder(
+                    builder: (context) => EmvilleHeader(
+                        initials: initials,
+                        onMenu: () => Scaffold.of(context).openDrawer()))),
+            Expanded(child: body),
+          ])),
+      bottomNavigationBar: EmvilleBottomNav(
+          selectedIndex: selectedIndex,
+          onSelected: (i) {
+            EmvilleNavigation.section.value = i;
+            setState(() => _selected = _destinations[i]);
+          }),
     );
   }
 }

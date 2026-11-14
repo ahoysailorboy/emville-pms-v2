@@ -58,8 +58,19 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: EmvilleSerif
+      fonts:
+        - asset: assets/fonts/Gelasio.ttf
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Italic.ttf
+          style: italic
 
   assets:
+    - assets/brand/
+    - assets/images/property/
     - env/dev.env
     - assets/icons/app_icon.png
     - assets/images/app_icon.png
