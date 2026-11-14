@@ -1,3 +1,4 @@
+import 'booking_edit.dart';
 import 'booking_style.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -58,6 +59,7 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
       kCheckOutCol,
       kGuestNameCol,
       kNoOfPaxCol,
+      'no_of_rooms',
       kSourceCol,
       kTotalPriceCol,
       kAdvancePaidCol,
@@ -73,6 +75,16 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
         .maybeSingle(); // Map<String, dynamic>? or null
 
     return resp;
+  }
+
+  Future<void> _editBooking() async {
+    final saved = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => BookingEditPage(bookingId: widget.bookingId)));
+    if (saved == true && mounted) {
+      setState(() {
+        _future = _fetchBooking();
+      });
+    }
   }
 
   Future<void> _openBilling() async {
@@ -139,10 +151,20 @@ class _BookingDetailsPageState extends State<BookingDetailsPage> {
             subtitle: 'A thoughtful stay, with every detail in place.',
             actions: data == null
                 ? null
-                : FilledButton.icon(
-                    onPressed: _openBilling,
-                    icon: const Icon(Icons.receipt_long_outlined, size: 17),
-                    label: const Text('View billing')),
+                : Row(children: [
+                    Expanded(
+                        child: OutlinedButton.icon(
+                            onPressed: _editBooking,
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('Edit booking'))),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: FilledButton.icon(
+                            onPressed: _openBilling,
+                            icon: const Icon(Icons.receipt_long_outlined,
+                                size: 17),
+                            label: const Text('View billing')))
+                  ]),
             children: [
               if (snapshot.hasError)
                 EmvilleError(onRetry: () async {

@@ -1,3 +1,4 @@
+import 'data/booking_edit_repository.dart' show bookingRoomCapacity;
 // lib/features/bookings/booking_new.dart
 import 'dart:typed_data';
 
@@ -16,7 +17,8 @@ const Color _emGold = Color(0xFFD9A633);
 const Color _emBg = Color(0xFFF7F6F3);
 
 /// ---- Config / DB constants -------------------------------------------------
-const kPropertyTotalRooms = 4; // total inventory (adjust if needed)
+const kPropertyTotalRooms =
+    bookingRoomCapacity; // total inventory (adjust if needed)
 const kReceiptsBucket = 'receipts';
 
 const kBookingsTable = 'booking_details';

@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class EmvilleTestBackend {
   String role = 'owner';
   bool failCalendar = false;
+  bool rejectBookingUpdate = false;
+  final bookingUpdates = <String, Map<String, dynamic>>{};
   List<Map<String, dynamic>>? bookingRows;
   final bookingReads = <Uri>[];
   final extras = <Map<String, dynamic>>[];
@@ -179,6 +181,21 @@ class EmvilleTestBackend {
         });
       }
       body = {'id': 'new-entry'};
+    } else if (request.method == 'PATCH' && path.endsWith('/booking_details')) {
+      final id = query['id']?.replaceFirst('eq.', '');
+      if (rejectBookingUpdate || id == null) {
+        status = 406;
+        body = {
+          'code': 'PGRST116',
+          'message': 'No rows returned',
+          'details': 'Results contain 0 rows'
+        };
+      } else {
+        final patch = jsonDecode(request.body) as Map<String, dynamic>;
+        bookingUpdates[id] = {...?bookingUpdates[id], ...patch};
+        writes.add('PATCH $path ${request.body}');
+        body = {'id': id};
+      }
     } else if (request.method == 'PATCH' || request.method == 'DELETE') {
       writes.add('${request.method} $path ${request.body}');
       removed.add(
@@ -301,10 +318,45 @@ class EmvilleTestBackend {
               'no_of_pax': 2
             },
           ];
-      if (query['id'] != null) {
-        body = (body as List)
-            .where((r) => query['id'] == 'eq.${r['id']}')
+      body = (body as List).map((row) {
+        final result = <String, dynamic>{...row, ...?bookingUpdates[row['id']]};
+        if (bookingUpdates.containsKey(row['id'])) {
+          result['balance'] = (result['total_price'] as num? ?? 0) -
+              (result['advance_paid'] as num? ?? 0);
+        }
+        return result;
+      }).toList();
+      final idFilter = query['id'];
+      if (idFilter != null) {
+        body = (body)
+            .where((r) => idFilter.startsWith('neq.')
+                ? r['id'] != idFilter.substring(4)
+                : r['id'] == idFilter.replaceFirst('eq.', ''))
             .toList();
+      }
+      for (final key in ['status', 'property_id']) {
+        if (query[key] != null) {
+          body = (body as List)
+              .where((r) => query[key] == 'eq.${r[key]}')
+              .toList();
+        }
+      }
+      for (final key in ['check_in', 'check_out']) {
+        final filter = query[key];
+        if (filter == null ||
+            (!filter.startsWith('lt.') && !filter.startsWith('gt.'))) {
+          continue;
+        }
+        final boundary = DateTime.parse(filter.substring(3));
+        body = (body as List).where((r) {
+          final date = DateTime.tryParse('${r[key]}');
+          return date != null &&
+              (filter.startsWith('lt.')
+                  ? date.isBefore(boundary)
+                  : filter.startsWith('gt.')
+                      ? date.isAfter(boundary)
+                      : true);
+        }).toList();
       }
       final offset = int.tryParse(query['offset'] ?? '0') ?? 0;
       final limit = int.tryParse(query['limit'] ?? '');
