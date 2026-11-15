@@ -56,6 +56,10 @@ Future<void> _initOneSignal() async {
         rootNavigatorKey.currentState?.pushNamed('/main/accounts/pending');
       } else if (route == 'petty_cash_pending_approvals') {
         rootNavigatorKey.currentState?.pushNamed('/petty-cash/pending');
+      } else if (route == 'bank_reconciliation') {
+        rootNavigatorKey.currentState?.pushNamed('/bank-reconciliation');
+      } else if (route == 'work_reminder' || route == 'maintenance_task') {
+        rootNavigatorKey.currentState?.pushNamed('/task', arguments: data);
       } else if (route == 'check_email') {
         // Prefer explicit message id if present
         final msgId = data['message_id'] ??
@@ -110,6 +114,10 @@ Future<void> main() async {
         rootNavigatorKey.currentState?.pushNamed('/main/accounts/pending');
       } else if (route == 'petty_cash_pending_approvals') {
         rootNavigatorKey.currentState?.pushNamed('/petty-cash/pending');
+      } else if (route == 'bank_reconciliation') {
+        rootNavigatorKey.currentState?.pushNamed('/bank-reconciliation');
+      } else if (route == 'work_reminder' || route == 'maintenance_task') {
+        rootNavigatorKey.currentState?.pushNamed('/task', arguments: data);
       } else if (route == 'check_email') {
         final msgId =
             data['message_id'] ?? data['gmail_message_id'] ?? data['id'];

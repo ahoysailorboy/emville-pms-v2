@@ -8,6 +8,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Isolated fixture data for interaction tests and design captures. Never reaches a live service.
 class EmvilleTestBackend {
   String role = 'owner';
+  final bankTables = <String, List<Map<String, dynamic>>>{};
+  final bankActions = <String>[];
+  final reminders = <Map<String, dynamic>>[];
+  final reminderActivity = <Map<String, dynamic>>[];
+  final reminderWrites = <Map<String, dynamic>>[];
   bool failCalendar = false;
   bool rejectBookingUpdate = false;
   final bookingUpdates = <String, Map<String, dynamic>>{};
@@ -169,6 +174,55 @@ class EmvilleTestBackend {
         'expires_in': 3600,
         'user': user
       };
+    } else if (path.contains('/rpc/') &&
+        (path.contains('bank_') || path.contains('reconciliation'))) {
+      bankActions.add('${path.split('/').last} ${request.body}');
+      body = null;
+    } else if (bankTables.containsKey(path.split('/').last)) {
+      final rows = bankTables[path.split('/').last]!;
+      final id = query['id']?.replaceFirst('eq.', '');
+      body = id == null ? rows : rows.firstWhere((r) => r['id'] == id);
+    } else if (path.endsWith('/rpc/reminder_people')) {
+      body = [
+        {'uid': user['id'], 'full_name': 'Anoop Thomas'},
+        {'uid': 'teammate', 'full_name': 'Caretaker'}
+      ];
+    } else if (path.endsWith('/rpc/create_work_reminder')) {
+      final params = jsonDecode(request.body) as Map<String, dynamic>;
+      reminderWrites.add(params);
+      reminders.add({
+        'id': 'reminder-new',
+        'title': params['p_title'],
+        'description': params['p_description'],
+        'assigned_to': params['p_assigned_to'],
+        'created_by': user['id'],
+        'due_at': params['p_due_at'],
+        'status': 'open',
+        'revision': 0
+      });
+      body = 'reminder-new';
+    } else if (path.endsWith('/rpc/update_work_reminder')) {
+      final params = jsonDecode(request.body) as Map<String, dynamic>;
+      reminderWrites.add(params);
+      final row = reminders.firstWhere((r) => r['id'] == params['p_id']);
+      row['revision'] = (row['revision'] as int) + 1;
+      if (params['p_action'] != 'remark') row['status'] = params['p_action'];
+      if (params['p_due_at'] != null) row['due_at'] = params['p_due_at'];
+      reminderActivity.add({
+        'id': 'activity',
+        'reminder_id': row['id'],
+        'actor': user['id'],
+        'action': params['p_action'],
+        'remarks': params['p_remarks'],
+        'created_at': DateTime.now().toIso8601String()
+      });
+      body = null;
+    } else if (path.endsWith('/work_reminders')) {
+      final id = query['id']?.replaceFirst('eq.', '');
+      body =
+          id == null ? reminders : reminders.firstWhere((r) => r['id'] == id);
+    } else if (path.endsWith('/work_reminder_activity')) {
+      body = reminderActivity;
     } else if (request.method == 'POST' &&
         (path.endsWith('/main_ledger') ||
             path.endsWith('/petty_cash_ledger') ||
@@ -258,12 +312,20 @@ class EmvilleTestBackend {
         ])
           {
             'id': task.$1,
+            'job_seq': task.$1 == 'ac' ? 13 : 12,
+            'job_description': 'Inspect the equipment',
+            'last_done_date': date(-30),
+            'remarks': 'Initial',
             'task_name': task.$2,
             'next_due_date': date(task.$3),
             'task_interval': task.$4,
             'postponed': 'no'
           }
       ];
+      if (query['id'] != null) {
+        body = (body as List)
+            .firstWhere((r) => r['id'] == query['id']!.replaceFirst('eq.', ''));
+      }
     } else if (path.endsWith('/booking_calendar_days')) {
       if (failCalendar) {
         status = 500;

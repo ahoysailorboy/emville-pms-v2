@@ -110,5 +110,9 @@
 	<string>This app uses location access to enhance your experience and support certain features.</string>
 
 
+	<key>NSCalendarsUsageDescription</key>
+	<string>Sync your assigned Emville tasks and reminders to your calendar.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Keep your assigned Emville task reminders up to date in your calendar.</string>
 </dict>
 </plist>

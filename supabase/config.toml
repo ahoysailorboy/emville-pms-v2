@@ -365,3 +365,10 @@ entrypoint = "./functions/accounts_approval_notify/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/accounts_approval_notify/*.html" ]
+
+# Handler authenticates JWTs itself; also permits the private scheduler secret.
+[functions.task_notifications]
+verify_jwt = false
+
+[functions.bank_statement_extract]
+verify_jwt = false

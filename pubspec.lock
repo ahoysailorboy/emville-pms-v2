@@ -162,7 +162,7 @@ packages:
     source: hosted
     version: "0.3.5+5"
   crypto:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: crypto
       sha256: e3626ae6270383c9e3a549f34c9e4cd26c09ae6a9adaab2bf4737a00340efdc4
@@ -209,6 +209,38 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.2"
+  device_calendar_plus:
+    dependency: "direct main"
+    description:
+      name: device_calendar_plus
+      sha256: b2bc987a168d038bf227495c61480ab8f30e11558daaa2dd0c1ac1273a521aea
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.0"
+  device_calendar_plus_android:
+    dependency: transitive
+    description:
+      name: device_calendar_plus_android
+      sha256: "001abeeb624ec9971d47bba58f73e39baefe824329a3d5ebc2f1e3816eba6997"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.11.0"
+  device_calendar_plus_ios:
+    dependency: transitive
+    description:
+      name: device_calendar_plus_ios
+      sha256: ecd843a1d2e88b5e66cafe9e6dbc5871fdae5485f0d6adb8c362d6553b522123
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.11.0"
+  device_calendar_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: device_calendar_plus_platform_interface
+      sha256: "2d40665feb0eef8ecd004de5aea6abfe97ecce3cda5dd60ae9e4cd6969d719f8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.0"
   equatable:
     dependency: transitive
     description:
@@ -414,46 +446,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
-  flutter_local_notifications:
-    dependency: "direct main"
-    description:
-      name: flutter_local_notifications
-      sha256: e99e9c6078d1359ba131b2c1eb8d68837170836a01bf2cea3cf2fa13e62ac2ac
-      url: "https://pub.dev"
-    source: hosted
-    version: "23.0.0"
-  flutter_local_notifications_linux:
-    dependency: transitive
-    description:
-      name: flutter_local_notifications_linux
-      sha256: bcbcf3c15e33b6866805092308f5f6ef27e1191874f6a92ef59213a0812a79a2
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.0.0"
-  flutter_local_notifications_platform_interface:
-    dependency: transitive
-    description:
-      name: flutter_local_notifications_platform_interface
-      sha256: "4a49db4ce3d633ebc85c85b5fa959572600ec10bd097419c454579444308a0a0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "13.0.0"
-  flutter_local_notifications_web:
-    dependency: transitive
-    description:
-      name: flutter_local_notifications_web
-      sha256: ef117694fbfcd82308ab0e324cfc9282fa50c192e24ec54a58173ae327ebc544
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.0"
-  flutter_local_notifications_windows:
-    dependency: transitive
-    description:
-      name: flutter_local_notifications_windows
-      sha256: c2d6efe9ba585d5f560d8b329131f00fe745834848e6221b22d1f62e0f0b16e2
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.0.0"
   flutter_localizations:
     dependency: transitive
     description: flutter
@@ -974,7 +966,7 @@ packages:
     source: hosted
     version: "7.2.0"
   shared_preferences:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: shared_preferences
       sha256: "1e85e0dccf5b4a016077fea7dfbb4a7cb39c759ac1596fcf60c06deadb7da91f"
@@ -1122,14 +1114,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.12"
-  timezone:
-    dependency: transitive
-    description:
-      name: timezone
-      sha256: "9f4e5a1a0e4fef7dd3424842c0575db01bfb7a11730e8d55753fcd5c5c98767b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.11.2"
   typed_data:
     dependency: transitive
     description:

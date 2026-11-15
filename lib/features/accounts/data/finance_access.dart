@@ -18,8 +18,6 @@ abstract final class FinanceAccess {
 class AccountBalance {
   const AccountBalance({required this.approved, this.ledger});
   final num? approved, ledger;
-  num? get unapproved =>
-      approved == null || ledger == null ? null : ledger! - approved!;
   factory AccountBalance.fromRow(Map<String, dynamic>? row) => AccountBalance(
       approved: row?['approved_balance'] as num?,
       ledger: row?['ledger_balance'] as num?);

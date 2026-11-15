@@ -1,13 +1,14 @@
+import 'package:emville_pms/features/reminders/property_reminders.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:emville_pms/ui/emville_theme.dart';
 import 'package:emville_pms/ui/emville_widgets.dart';
-import 'package:emville_pms/features/pms/upcoming_tasks_page.dart';
+import 'package:emville_pms/features/pms/maintenance_task_page.dart';
+import 'package:emville_pms/features/reminders/reminder_pages.dart';
 import 'package:emville_pms/features/pms/pending_tasks_page.dart';
 import 'package:emville_pms/features/pms/postponed_tasks_page.dart';
 import 'package:emville_pms/features/pms/work_planning_page.dart';
-import 'package:emville_pms/features/pms/add_pms_task.dart';
 
 class FirstPage extends StatefulWidget {
   const FirstPage({super.key, this.role});
@@ -18,6 +19,7 @@ class FirstPage extends StatefulWidget {
 
 class _FirstPageState extends State<FirstPage> {
   String _filter = 'All';
+  int _reminderRefresh = 0;
   bool _month = false;
   late Future<List<Map<String, dynamic>>> _work;
   @override
@@ -43,6 +45,7 @@ class _FirstPageState extends State<FirstPage> {
 
   Future<void> _refresh() async {
     setState(() {
+      _reminderRefresh++;
       _work = _load();
     });
     try {
@@ -153,9 +156,10 @@ class _FirstPageState extends State<FirstPage> {
                             for (final row in filtered) _task(row),
                           ]);
                     }),
+                PropertyReminders(key: ValueKey(_reminderRefresh)),
                 const SizedBox(height: 20),
                 FilledButton(
-                    onPressed: () => _open(const AddPmsTaskPage()),
+                    onPressed: () => _open(const ScheduleReminderPage()),
                     child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -180,8 +184,7 @@ class _FirstPageState extends State<FirstPage> {
     final due = DateTime.tryParse(row['next_due_date']?.toString() ?? '');
     final overdue = _overdue(row);
     return InkWell(
-        onTap: () => _open(
-            overdue ? const PendingTasksPage() : const UpcomingTasksPage()),
+        onTap: () => _open(MaintenanceTaskPage(id: row['id'].toString())),
         child: Container(
             padding: const EdgeInsets.symmetric(vertical: 17),
             decoration: const BoxDecoration(
@@ -226,9 +229,8 @@ class _FirstPageState extends State<FirstPage> {
               IconButton(
                   tooltip: 'Open task workflow',
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _open(overdue
-                      ? const PendingTasksPage()
-                      : const UpcomingTasksPage()),
+                  onPressed: () =>
+                      _open(MaintenanceTaskPage(id: row['id'].toString())),
                   icon: const Icon(Icons.radio_button_unchecked,
                       size: 18, color: Emville.muted)),
             ])));

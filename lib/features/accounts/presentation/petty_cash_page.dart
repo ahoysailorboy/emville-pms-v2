@@ -406,7 +406,7 @@ class _PettyCashPageState extends State<PettyCashPage> {
               return AccountBalanceBox(
                 label: 'Petty cash',
                 photo: false,
-                showUnapproved: _isAdmin,
+                showLedgerBalance: _isAdmin,
                 balance: AccountBalance(
                     approved: snapshot.data?.approved,
                     ledger: snapshot.data?.ledger),

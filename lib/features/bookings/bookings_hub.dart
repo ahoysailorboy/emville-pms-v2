@@ -1,3 +1,4 @@
+import 'package:emville_pms/features/reminders/home_reminders.dart';
 import 'package:emville_pms/ui/emville_calendar.dart';
 import 'package:emville_pms/ui/emville_theme.dart';
 import 'package:emville_pms/ui/emville_widgets.dart';
@@ -30,6 +31,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
   bool _loading = true;
   bool _loadFailed = false;
   int _request = 0;
+  int _reminderRefresh = 0;
   DateTime _selectedDay = DateUtils.dateOnly(DateTime.now());
   late Future<List<dynamic>> _agenda;
   late Future<List<dynamic>> _today;
@@ -150,6 +152,7 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
 
   Future<void> _refresh() async {
     setState(() {
+      _reminderRefresh++;
       _today = _fetchBookingsForDay(DateUtils.dateOnly(DateTime.now()));
       _agenda = DateUtils.isSameDay(_selectedDay, DateTime.now())
           ? _today
@@ -418,6 +421,8 @@ class _BookingsHubPageState extends State<BookingsHubPage> {
                                   }).toList());
                                 }),
                           ])),
+                  HomeReminders(key: ValueKey(_reminderRefresh)),
+                  const SizedBox(height: 20),
                   Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: FilledButton(

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:emville_pms/features/accounts/data/finance_access.dart';
 import 'package:emville_pms/features/accounts/presentation/accounts_hub_page.dart';
 import 'package:emville_pms/features/accounts/presentation/account_entry_page.dart';
 import 'package:emville_pms/features/accounts/presentation/main_accounts_page.dart';
@@ -30,7 +29,7 @@ void main() {
           privileged ? findsOneWidget : findsNothing);
       expect(
           find.byKey(const ValueKey('petty-approved-balance')), findsOneWidget);
-      expect(find.text('Unapproved balance'),
+      expect(find.text('Ledger balance'),
           privileged ? findsNWidgets(2) : findsNothing);
       expect(
           backend.reads.any((uri) => uri.path.endsWith('/main_ledger_balance')),
@@ -42,6 +41,10 @@ void main() {
               uri.queryParameters['select']!.contains('ledger_balance') ==
               privileged),
           isTrue);
+      if (privileged) {
+        expect(find.textContaining('5,800'), findsOneWidget);
+        expect(find.textContaining('450'), findsNothing);
+      }
       expect(tester.takeException(), isNull);
     });
   }
@@ -98,7 +101,4 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
-  test('Unapproved balance is the pending net movement', () {
-    expect(const AccountBalance(approved: 6250, ledger: 5800).unapproved, -450);
-  });
 }

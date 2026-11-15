@@ -1,3 +1,4 @@
+import '../reconciliation/bank_reconciliation_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:emville_pms/ui/emville_theme.dart';
@@ -76,15 +77,22 @@ class _AccountsHubPageState extends State<AccountsHubPage> {
                                   label: 'MAIN LEDGER · APPROVED BALANCE',
                                   balance: data.main!,
                                   photo: true,
-                                  showUnapproved: true),
-                              const SizedBox(height: 13)
+                                  showLedgerBalance: true),
+                              const SizedBox(height: 13),
+                              EmvilleTile(
+                                  icon: Icons.fact_check_outlined,
+                                  title: 'Bank reconciliation',
+                                  subtitle:
+                                      'Federal Bank statements · monthly review',
+                                  onTap: () =>
+                                      _open(const BankReconciliationPage())),
                             ],
                             AccountBalanceBox(
                                 key: const ValueKey('petty-approved-balance'),
                                 label: 'Petty cash · Approved balance',
                                 balance: data.petty,
                                 compact: true,
-                                showUnapproved: data.privileged),
+                                showLedgerBalance: data.privileged),
                             const SizedBox(height: 15),
                             EmvilleCallout(
                                 leading: Text('${data.pending}',

@@ -8,6 +8,8 @@
     <!-- Android 13+ runtime permission for push (the SDK still asks at runtime) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
     <application
         android:name="${applicationName}"
         android:label="Emville"

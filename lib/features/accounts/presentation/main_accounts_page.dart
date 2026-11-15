@@ -369,7 +369,7 @@ class _MainAccountsPageState extends State<MainAccountsPage> {
                   return AccountBalanceBox(
                     label: 'Main ledger',
                     photo: true,
-                    showUnapproved: _isAdmin,
+                    showLedgerBalance: _isAdmin,
                     balance: AccountBalance(
                         approved: snapshot.data?.approved,
                         ledger: snapshot.data?.ledger),

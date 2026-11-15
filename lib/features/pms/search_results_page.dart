@@ -1,5 +1,7 @@
 // lib/features/pms/search_results_page.dart
 import 'dart:io';
+import 'package:emville_pms/ui/emville_widgets.dart';
+import 'package:emville_pms/features/reminders/reminder_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -228,23 +230,48 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
   }
 
   Future<void> _postpone() async {
+    if (_remarksCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add remarks before postponing.')));
+      return;
+    }
+    final now = DateTime.now();
+    final followUp = await showDatePicker(
+        context: context,
+        initialDate: now.add(const Duration(days: 1)),
+        firstDate: DateUtils.dateOnly(now),
+        lastDate: DateTime(now.year + 5));
+    if (followUp == null || !mounted) return;
+    await _saveNote(followUp: followUp);
+  }
+
+  Future<void> _saveNote({DateTime? followUp}) async {
+    final remarks = _remarksCtrl.text.trim();
+    if (remarks.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Remarks are required.')));
+      return;
+    }
     setState(() => _busy = true);
     try {
-      await supabaseCall(() async {
-        return await _sb.from('main_pms_db').update({
-          'postponed': 'yes',
-          'updated_date': DateTime.now().toIso8601String(),
-        }).eq('job_seq', _jobSeq);
+      await _sb.rpc('add_pms_task_note', params: {
+        'p_job_seq': _jobSeq,
+        'p_remarks': remarks,
+        'p_follow_up': followUp == null ? null : _dfApi.format(followUp),
       });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Task postponed')));
+      await ReminderRepository(_sb).notify();
       await _reloadAfterChange();
-    } on PostgrestException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Postpone failed: ${e.message}')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                followUp == null ? 'Remark saved' : 'Follow-up scheduled')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content:
+                Text('Could not save this task update. Please try again.')));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -366,6 +393,7 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
         }).eq('job_seq', _jobSeq);
       });
 
+      await ReminderRepository(_sb).notify();
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Task updated')));
@@ -436,20 +464,16 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
     final nextDueUi =
         _nextDue.isEmpty ? '—' : _dfUi.format(DateTime.parse(_nextDue));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Search Results',
-          style: TextStyle(fontSize: rs.font(18), fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: _green,
-        foregroundColor: _gold,
-      ),
-      body: _loading
+    return EmvillePage(
+      section: 3,
+      child: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: EdgeInsets.all(rs.space(16)),
               children: [
+                const EmvilleHeading('Task details',
+                    eyebrow: 'Property / maintenance'),
+                const SizedBox(height: 20),
                 // ── TOP EXPANSION TILE (details + update form) ────────────────
                 Card(
                   elevation: 2,
@@ -463,6 +487,7 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
                       highlightColor: _gold.withValues(alpha: 0.06),
                     ),
                     child: ExpansionTile(
+                      initiallyExpanded: true,
                       tilePadding: EdgeInsets.symmetric(
                         horizontal: rs.space(16),
                         vertical: rs.space(8),
@@ -617,6 +642,11 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
                               ],
                               SizedBox(height: rs.space(16)),
 
+                              OutlinedButton.icon(
+                                  onPressed: _busy ? null : () => _saveNote(),
+                                  icon: const Icon(Icons.chat_bubble_outline),
+                                  label: const Text('Add remark')),
+                              SizedBox(height: rs.space(12)),
                               // Actions
                               Row(
                                 children: [
@@ -649,7 +679,7 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
                                           )
                                         : const Icon(Icons.save_outlined),
                                     label: Text(
-                                      'Submit',
+                                      'Complete',
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: rs.font(14),
@@ -668,6 +698,10 @@ class _SearchResultDetailPageState extends State<SearchResultDetailPage> {
 
                 SizedBox(height: rs.space(16)),
 
+                _PmsTaskNotes(
+                    jobSeq: _jobSeq,
+                    key: ValueKey(
+                        '${widget.job['updated_date']}-${widget.job['remarks']}')),
                 // ── HISTORY (each image clickable) ────────────────────────────
                 Text(
                   'History',
@@ -804,4 +838,41 @@ class _HistItem {
   final String remarks;
   final String? attachmentPath;
   final String source;
+}
+
+class _PmsTaskNotes extends StatelessWidget {
+  const _PmsTaskNotes({super.key, required this.jobSeq});
+  final int jobSeq;
+  @override
+  Widget build(BuildContext context) =>
+      FutureBuilder<List<Map<String, dynamic>>>(
+          future: Supabase.instance.client
+              .from('pms_task_notes')
+              .select()
+              .eq('job_seq', jobSeq)
+              .order('created_at', ascending: false),
+          builder: (context, s) {
+            if (s.hasError) {
+              return const Text(
+                  'Could not load task conversation. Pull back and reopen to retry.');
+            }
+            if (!s.hasData || s.data!.isEmpty) return const SizedBox.shrink();
+            return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const EmvilleSectionTitle('Conversation'),
+                  for (final n in s.data!)
+                    Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  '${n['action']} · ${DateFormat('d MMM yyyy, h:mm a').format(DateTime.parse(n['created_at']).toLocal())}'),
+                              Text(n['remarks']),
+                              if (n['follow_up'] != null)
+                                Text('Follow up: ${n['follow_up']}'),
+                            ])),
+                ]);
+          });
 }

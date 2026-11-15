@@ -10,10 +10,10 @@ class AccountBalanceBox extends StatelessWidget {
       required this.balance,
       this.photo = false,
       this.compact = false,
-      this.showUnapproved = false});
+      this.showLedgerBalance = false});
   final String label;
   final AccountBalance balance;
-  final bool photo, compact, showUnapproved;
+  final bool photo, compact, showLedgerBalance;
   String amount(num? value) => value == null ? 'Unavailable' : rupees(value);
   @override
   Widget build(BuildContext context) {
@@ -52,16 +52,16 @@ class AccountBalanceBox extends StatelessWidget {
                     Text(amount(balance.approved),
                         style: Emville.heading(compact ? 26 : 34).copyWith(
                             color: compact ? Emville.ink : Emville.paper)),
-                    if (showUnapproved) ...[
+                    if (showLedgerBalance) ...[
                       const SizedBox(height: 12),
                       Align(
                           alignment: Alignment.bottomRight,
                           child: Semantics(
-                              label: 'Unapproved balance for $label',
+                              label: 'Ledger balance for $label',
                               child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
-                                    Text('Unapproved balance',
+                                    Text('Ledger balance',
                                         style: TextStyle(
                                             fontFamily: 'Roboto',
                                             fontSize: 9,
@@ -69,7 +69,7 @@ class AccountBalanceBox extends StatelessWidget {
                                                 ? Emville.muted
                                                 : const Color(0xFFD7DFCB))),
                                     const SizedBox(height: 4),
-                                    Text(amount(balance.unapproved),
+                                    Text(amount(balance.ledger),
                                         style: TextStyle(
                                             fontFamily: 'Roboto',
                                             fontSize: 12,
